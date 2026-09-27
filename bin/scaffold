@@ -1,0 +1,575 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""scaffold: create studies, sims and apps in the shape PROTOCOL.md describes, and check existing repos.
+
+  scaffold new study <name> --question "..." [--profile NAME] [--dir PARENT]
+  scaffold new sim <name> --question "..." [--inside STUDY]
+  scaffold new app <slug> --question "..." [--study PATH]
+  scaffold promote-sim <study>/sims/<slug>
+  scaffold check [PATH]
+  scaffold profiles
+
+Stdlib only (Python 3.9+). Needs git. `new` installs the preregistration kit when it can find kit_ap
+(--kit-ap PATH, $KIT_AP, or a sibling checkout of the profile's prereg repo); otherwise it says how.
+"""
+import argparse
+import datetime as _dt
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parents[1]
+TEMPLATES = HERE / "templates"
+PROFILES = HERE / "profiles"
+DEFAULT_PROFILE = "polarizetech"
+
+KINDS = ("study", "sim")
+STAGES = ("SKETCH", "PROBE", "BENCH", "SHIPPED")
+APP_STATUSES = ("active", "superseded", "abandoned")
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+#: Kind prefixes the protocol retires (PROTOCOL.md § 1). The kind belongs in the manifest.
+KIND_PREFIXES = ("lab-", "sim-", "study-", "case-", "exp-")
+BRANCH_REFS = ("", "main", "master", "HEAD", "develop", "dev", "trunk")
+KIND_LINE_RE = re.compile(r"\*\*Kind:\*\*\s*(study|sim)\b(?:.*?\*\*Stage:\*\*\s*([A-Z]+))?")
+ABS_PATH_RE = re.compile(r"(?<![\w.])(/Users/[A-Za-z0-9_.-]+/|/home/[a-z0-9_.-]+/)")
+#: Tracked files that are records, not instructions: an absolute path in them is history, not a bug.
+ABS_PATH_SKIP = re.compile(r"(\.jsonl$|provenance\.json$|(^|/)conversations/|(^|/)protocol/history/|^\.agents/|\.lock$)")
+TEXT_SUFFIXES = {".py", ".md", ".toml", ".json", ".yaml", ".yml", ".sh", ".js", ".mjs", ".ts", ".html",
+                 ".css", ".txt", ".cfg", ".ini", ".plist", ".cff", ""}
+
+
+class Fail(Exception):
+    """An expected failure: printed as one line, exit status 1."""
+
+
+# ------------------------------------------------------------------------------------------ TOML
+
+def load_toml(path):
+    text = Path(path).read_text(encoding="utf-8")
+    try:
+        import tomllib  # Python 3.11+
+        return tomllib.loads(text)
+    except ImportError:
+        return _mini_toml(text, path)
+
+
+def _mini_toml(text, path):
+    """The TOML subset manifests and profiles use: tables, arrays of tables, strings, numbers,
+    booleans and flat arrays. Used only where tomllib is unavailable (Python < 3.11)."""
+    root, cur = {}, None
+    cur = root
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = _strip_comment(raw).strip()
+        if not line:
+            continue
+        if line.startswith("[["):
+            name = line.strip("[] ")
+            cur = {}
+            _table(root, name[:name.rfind(".")] if "." in name else "").setdefault(name.split(".")[-1], []).append(cur)
+        elif line.startswith("["):
+            cur = _table(root, line.strip("[] "))
+        elif "=" in line:
+            k, v = line.split("=", 1)
+            cur[k.strip().strip('"')] = _value(v.strip(), path, n)
+        else:
+            raise Fail(f"{path}:{n}: cannot parse {raw!r}")
+    return root
+
+
+def _table(root, dotted):
+    t = root
+    for part in [p for p in dotted.split(".") if p]:
+        nxt = t.setdefault(part, {})
+        t = nxt[-1] if isinstance(nxt, list) else nxt
+    return t
+
+
+def _strip_comment(s):
+    out, q = [], None
+    for ch in s:
+        if q:
+            out.append(ch)
+            if ch == q:
+                q = None
+        elif ch in "\"'":
+            q = ch
+            out.append(ch)
+        elif ch == "#":
+            break
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _value(v, path, n):
+    if v.startswith(("\"", "'")):
+        return v[1:-1].encode().decode("unicode_escape") if v[0] == '"' else v[1:-1]
+    if v in ("true", "false"):
+        return v == "true"
+    if v.startswith("["):
+        inner = v.strip("[]").strip()
+        return [_value(x.strip(), path, n) for x in _split_array(inner)] if inner else []
+    try:
+        return float(v) if "." in v else int(v)
+    except ValueError:
+        raise Fail(f"{path}:{n}: unsupported value {v!r}") from None
+
+
+def _split_array(s):
+    parts, cur, q = [], [], None
+    for ch in s:
+        if q:
+            cur.append(ch)
+            q = None if ch == q else q
+        elif ch in "\"'":
+            q = ch
+            cur.append(ch)
+        elif ch == ",":
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    if "".join(cur).strip():
+        parts.append("".join(cur))
+    return parts
+
+
+def toml_str(s):
+    return json.dumps(s, ensure_ascii=False)
+
+
+# ------------------------------------------------------------------------------------- helpers
+
+def git(*args, cwd):
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+
+def load_profile(name):
+    p = PROFILES / f"{name}.toml"
+    if not p.exists():
+        have = ", ".join(sorted(x.stem for x in PROFILES.glob("*.toml")))
+        raise Fail(f"no profile {name!r} in {PROFILES} (have: {have})")
+    return load_toml(p)
+
+
+def check_name(name):
+    if not NAME_RE.match(name):
+        raise Fail(f"{name!r}: use lowercase letters, digits and hyphens")
+    for p in KIND_PREFIXES:
+        if name.startswith(p):
+            raise Fail(f"{name!r}: no kind prefix ({p}); the kind goes in the manifest (PROTOCOL.md § 1)")
+
+
+def repo_basename(repo):
+    return repo.rsplit("/", 1)[-1] if repo else ""
+
+
+def template_vars(profile, name, question, **extra):
+    wb = profile.get("workbench", {})
+    ds = profile.get("design", {})
+    v = {
+        "name": name,
+        "question": question.replace('"', "'"),
+        "date": _dt.date.today().isoformat(),
+        "year": str(_dt.date.today().year),
+        "profile": profile.get("name", ""),
+        "org": profile.get("org", ""),
+        "author": profile.get("author", ""),
+        "corpus_repo": profile.get("corpus", {}).get("repo", ""),
+        "corpus_projects_dir": profile.get("corpus", {}).get("projects_dir", "projects"),
+        "workbench_repo": wb.get("repo", ""),
+        "workbench_name": repo_basename(wb.get("repo", "")),
+        "workbench_marker": wb.get("marker", ""),
+        "workbench_aliases": "".join(f"{json.dumps(a)}, " for a in wb.get("env_aliases", [])),
+        "design_repo": ds.get("repo", ""),
+        "design_name": repo_basename(ds.get("repo", "")),
+        "design_css": ds.get("css", "design.css"),
+        "design_js_tag": f'<script type="module" src="design/{ds["js"]}"></script>' if ds.get("js") else "",
+        "scaffold_ref": "v0.1.0",
+    }
+    v.update(extra)
+    return v
+
+
+def render(src, dest, variables, skip=()):
+    """Copy a template tree, filling {{placeholders}}. An unknown placeholder is an error."""
+    for f in sorted(src.rglob("*")):
+        rel = f.relative_to(src)
+        if f.is_dir() or any(str(rel).startswith(s) for s in skip):
+            continue
+        out = dest / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        text = f.read_text(encoding="utf-8")
+
+        def sub(m):
+            k = m.group(1)
+            if k not in variables:
+                raise Fail(f"template {rel}: unknown placeholder {{{{{k}}}}}")
+            return variables[k]
+        out.write_text(re.sub(r"\{\{(\w+)\}\}", sub, text), encoding="utf-8")
+        if os.access(f, os.X_OK):
+            out.chmod(0o755)
+
+
+def write_licence(dest, profile):
+    lic = profile.get("licence", {})
+    code, docs = lic.get("code", "MIT"), lic.get("docs", "CC-BY-4.0")
+    year, author = _dt.date.today().year, profile.get("author", "")
+    (dest / "LICENSES").mkdir(exist_ok=True)
+    for spdx in {code, docs}:
+        src = HERE / "LICENSES" / f"{spdx}.txt"
+        if src.exists():
+            shutil.copy(src, dest / "LICENSES" / src.name)
+    (dest / "LICENSE").write_text(
+        f"This repository is released under two licences.\n\n"
+        f"Code: {code} (LICENSES/{code}.txt)\n"
+        f"Text, figures and documentation: {docs} (LICENSES/{docs}.txt)\n\n"
+        f"Copyright (c) {year} {author}\n\n"
+        f"Third-party data keeps its own licence; see data/manifest.json.\n", encoding="utf-8")
+
+
+def find_kit_ap(explicit, profile):
+    for c in (explicit, os.environ.get("KIT_AP")):
+        if c:
+            p = Path(c).expanduser()
+            p = p / "bin" / "kit_ap" if p.is_dir() else p
+            if not p.exists():
+                raise Fail(f"kit_ap not found at {p}")
+            return p
+    name = repo_basename(profile.get("prereg", {}).get("repo", ""))
+    for sib in (HERE.parent / name, HERE.parent / f"kit-{name}"):
+        if (sib / "bin" / "kit_ap").exists():
+            return sib / "bin" / "kit_ap"
+    return None
+
+
+def install_kit(dest, profile, kit_ap):
+    extra = profile.get("prereg", {}).get("modules", [])
+    if not kit_ap:
+        repo = profile.get("prereg", {}).get("repo", "")
+        print(f"  ! prereg kit not installed: kit_ap not found. Run:\n"
+              f"      git clone https://github.com/{repo}.git\n"
+              f"      <that clone>/bin/kit_ap init {dest}" +
+              (f"\n      {dest}/.agents/bin/kit_ap add {' '.join(extra)}" if extra else ""))
+        return False
+    for args in (["init", str(dest)], *([["add", *extra, "--repo", str(dest)]] if extra else [])):
+        r = subprocess.run([sys.executable, str(kit_ap), *args], capture_output=True, text=True)
+        if r.returncode:
+            # `add` takes the repo differently across kit versions; retry from inside the repo.
+            if args[0] == "add":
+                r = subprocess.run([sys.executable, str(dest / ".agents" / "bin" / "kit_ap"), "add", *extra],
+                                   cwd=dest, capture_output=True, text=True)
+            if r.returncode:
+                print(f"  ! kit_ap {args[0]} failed: {(r.stderr or r.stdout).strip().splitlines()[-1:]}")
+                return False
+    print(f"  prereg kit installed ({', '.join(['defaults', *extra])})")
+    return True
+
+
+def append_toml(path, block):
+    text = path.read_text(encoding="utf-8").rstrip("\n")
+    path.write_text(text + "\n\n" + block.strip("\n") + "\n", encoding="utf-8")
+
+
+# ------------------------------------------------------------------------------------------ new
+
+def cmd_new(a):
+    if a.kind == "app":
+        return new_app(a)
+    check_name(a.name)
+    inside = Path(a.inside).resolve() if getattr(a, "inside", None) else None
+    if a.kind == "study" and inside:
+        raise Fail("--inside is for sims; a study is always its own repo")
+    if inside:
+        study_manifest = inside / "STUDY.toml"
+        if not study_manifest.exists():
+            raise Fail(f"{inside} has no STUDY.toml")
+        profile = load_profile(load_toml(study_manifest).get("profile") or a.profile)
+        dest = inside / "sims" / a.name
+    else:
+        profile = load_profile(a.profile)
+        dest = Path(a.dir).resolve() / a.name
+    if dest.exists() and any(dest.iterdir()):
+        raise Fail(f"{dest} already exists and is not empty")
+    v = template_vars(profile, a.name, a.question)
+    skip = ()
+    if a.kind == "study" and not profile.get("workbench", {}).get("repo"):
+        skip = ("shared/workbench.py",)
+    if inside:  # a sim inside a study shares the study's repo-level files
+        skip = (".github", "Makefile", "CITATION.cff", "pyproject.toml", ".gitignore", "CLAUDE.md")
+    render(TEMPLATES / a.kind, dest, v, skip=skip)
+    print(f"created {a.kind} {dest}")
+
+    if inside:
+        append_toml(inside / "STUDY.toml",
+                    f'[[sims]]\nslug = {toml_str(a.name)}\npath = {toml_str(f"sims/{a.name}")}')
+        print(f"  registered in {inside / 'STUDY.toml'}")
+        return
+    write_licence(dest, profile)
+    if a.no_git:
+        return
+    git("init", "-q", "-b", "main", cwd=dest)
+    git("add", "-A", cwd=dest)
+    code, _, err = git("commit", "-q", "-m", f"Scaffold {a.kind} {a.name} (scientific-research-scaffold)", cwd=dest)
+    if code:
+        print(f"  ! initial commit failed: {err}")
+    install_kit(dest, profile, find_kit_ap(a.kit_ap, profile))
+    org = profile.get("org", "<org>")
+    print(f"\nNext: decide visibility (it is recorded in the manifest), then\n"
+          f"      gh repo create {org}/{a.name} --private --source {dest} --push")
+
+
+def new_app(a):
+    study = Path(a.study).resolve()
+    manifest_path = study / "STUDY.toml"
+    if not manifest_path.exists():
+        raise Fail(f"{study} has no STUDY.toml; apps belong to studies")
+    check_name(a.name)
+    m = load_toml(manifest_path)
+    profile = load_profile(m.get("profile") or DEFAULT_PROFILE)
+    apps = m.get("apps", [])
+    nums = [int(x["version"][1:]) for x in apps if re.fullmatch(r"v\d+", str(x.get("version", "")))]
+    version = f"v{max(nums, default=0) + 1}"
+    dest = study / "apps" / f"{version}-{a.name}"
+    if dest.exists():
+        raise Fail(f"{dest} already exists")
+    port = str(8300 + (sum(map(ord, m.get("name", ""))) % 50) * 10 + len(apps) % 10)
+    v = template_vars(profile, m.get("name", study.name), a.question, title=f"{a.name} ({version})",
+                      version=version, port=port)
+    render(TEMPLATES / "app", dest, v)
+    (dest / "serve.py").chmod(0o755)
+    append_toml(manifest_path,
+                f"[[apps]]\nversion = {toml_str(version)}\nslug = {toml_str(a.name)}\n"
+                f"question = {toml_str(a.question)}\nstatus = \"active\"")
+    print(f"created app {dest}\n  run: python3 {dest.relative_to(study)}/serve.py")
+
+
+# -------------------------------------------------------------------------------- promote-sim
+
+def cmd_promote(a):
+    sim = Path(a.path).resolve()
+    if not (sim / "SIM.toml").exists():
+        raise Fail(f"{sim} has no SIM.toml")
+    code, top, _ = git("rev-parse", "--show-toplevel", cwd=sim)
+    if code:
+        raise Fail(f"{sim} is not in a git repo")
+    top = Path(top)
+    prefix = sim.relative_to(top).as_posix()
+    name = load_toml(sim / "SIM.toml").get("name", sim.name)
+    branch = f"promote/{name}"
+    print(f"splitting {prefix} into branch {branch} (keeps its history)...")
+    code, out, err = git("subtree", "split", f"--prefix={prefix}", "-b", branch, cwd=top)
+    if code:
+        raise Fail(f"git subtree split failed: {err}")
+    dest = Path(a.dir).resolve() / name
+    if dest.exists():
+        raise Fail(f"{dest} already exists")
+    code, _, err = git("clone", "-q", "--branch", branch, str(top), str(dest), cwd=top)
+    if code:
+        raise Fail(f"clone failed: {err}")
+    git("checkout", "-q", "-b", "main", cwd=dest)
+    git("remote", "remove", "origin", cwd=dest)
+    m = load_toml(sim / "SIM.toml")
+    profile = load_profile(m.get("profile") or DEFAULT_PROFILE)
+    org = profile.get("org", "<org>")
+    print(f"""
+promoted to {dest}, with history. Remaining, in order (PROTOCOL.md § 6):
+  1. In {dest}: add the repo-level files a standalone sim owes (LICENSE, CLAUDE.md, CITATION.cff,
+     pyproject.toml, CI); `scaffold check {dest}` lists what is missing. Install the prereg kit.
+  2. Decide visibility, then:  gh repo create {org}/{name} --private --source {dest} --push
+  3. Tag the current model:    git -C {dest} tag -a model-v0.1.0 -m "promoted from {top.name}"
+  4. In {top.name}: delete {prefix}, and replace its [[sims]] entry with
+         repo = "{org}/{name}"
+         ref = "model-v0.1.0"
+     then pin it in pyproject.toml. The branch {branch} can be deleted once pushed.""")
+
+
+# -------------------------------------------------------------------------------------- check
+
+class Report:
+    def __init__(self, root):
+        self.root, self.fails, self.warns, self.oks = root, [], [], 0
+
+    def ok(self, cond, msg, warn=False):
+        if cond:
+            self.oks += 1
+        elif warn:
+            self.warns.append(msg)
+        else:
+            self.fails.append(msg)
+        return cond
+
+
+def check_repo(root, rep, nested=False, profile_override=None):
+    root = Path(root).resolve()
+    manifests = [k for k in KINDS if (root / f"{k.upper()}.toml").exists()]
+    if not rep.ok(len(manifests) == 1, f"{root.name}: exactly one of STUDY.toml / SIM.toml is required"):
+        return
+    kind = manifests[0]
+    try:
+        m = load_toml(root / f"{kind.upper()}.toml")
+    except Exception as e:  # noqa: BLE001 - report any parse error as a failure
+        rep.ok(False, f"{kind.upper()}.toml does not parse: {e}")
+        return
+    where = "" if not nested else f"{root.name}: "
+    rep.ok(m.get("kind") == kind, f"{where}{kind.upper()}.toml says kind = {m.get('kind')!r}")
+    name = m.get("name", "")
+    try:
+        check_name(name)
+        rep.ok(True, "")
+    except Fail as e:
+        rep.ok(False, f"{where}name: {e}")
+    rep.ok(name == root.name, f"{where}name {name!r} differs from the folder name {root.name!r}", warn=True)
+    rep.ok(bool(m.get("question")), f"{where}manifest has no question")
+    rep.ok(m.get("stage") in STAGES, f"{where}stage {m.get('stage')!r} is not one of {', '.join(STAGES)}")
+
+    readme = root / "README.md"
+    if rep.ok(readme.exists(), f"{where}README.md is missing"):
+        head = readme.read_text(encoding="utf-8").splitlines()[:12]
+        km = next((KIND_LINE_RE.search(line) for line in head if KIND_LINE_RE.search(line)), None)
+        if rep.ok(km is not None, f"{where}README.md has no '**Kind:** {kind} · **Stage:** ...' line near the top"):
+            rep.ok(km.group(1) == kind, f"{where}README kind {km.group(1)!r} disagrees with the manifest ({kind!r})")
+            if km.group(2):
+                rep.ok(km.group(2) == m.get("stage"),
+                       f"{where}README stage {km.group(2)} disagrees with the manifest ({m.get('stage')})")
+
+    profile = {}
+    pname = profile_override or m.get("profile")
+    if pname:
+        try:
+            profile = load_profile(pname)
+        except Fail as e:
+            rep.ok(False, str(e), warn=True)
+
+    if kind == "sim":
+        model = m.get("model", "model")
+        rep.ok((root / model).exists(), f"{where}model path {model!r} does not exist (set model = in SIM.toml)")
+    if nested:
+        return
+
+    rep.ok(m.get("visibility") in ("public", "private"), "visibility must be 'public' or 'private', decided")
+    rep.ok(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(m.get("visibility_decided", "")))),
+           "visibility_decided must be the date (YYYY-MM-DD) visibility was decided")
+    for f in ("CLAUDE.md", "AGENTS.md", "LICENSE", "EXPERIMENTS.md", "RESEARCH.md"):
+        rep.ok((root / f).exists(), f"{f} is missing")
+    lock = root / ".agents" / "kit_ap.lock"
+    if rep.ok(lock.exists(), "prereg kit not installed (.agents/kit_ap.lock missing): run kit_ap init"):
+        try:
+            mods = json.loads(lock.read_text()).get("modules", [])
+        except ValueError:
+            mods = []
+        rep.ok("prereg" in mods, "kit_ap.lock does not include the prereg module")
+    corpus = m.get("corpus", {}).get("project", "")
+    rep.ok(bool(corpus), "no corpus project named in the manifest ([corpus] project = ...)", warn=(kind == "sim"))
+    gm = root / ".gitmodules"
+    corpus_repo = profile.get("corpus", {}).get("repo", "")
+    if gm.exists() and corpus_repo:
+        rep.ok(corpus_repo.lower() not in gm.read_text().lower(),
+               f"the corpus ({corpus_repo}) is a submodule; reference it by claim ID instead")
+
+    if kind == "study":
+        for app in m.get("apps", []):
+            ver, slug = str(app.get("version", "")), app.get("slug", "")
+            label = f"app {ver}-{slug}"
+            rep.ok(bool(re.fullmatch(r"v\d+", ver)), f"{label}: version must look like v1, v2, ...")
+            rep.ok(app.get("status", "active") in APP_STATUSES, f"{label}: status must be one of {APP_STATUSES}")
+            path = root / app.get("path", f"apps/{ver}-{slug}")
+            if rep.ok(path.exists(), f"{label}: {path.relative_to(root)} does not exist"):
+                rep.ok(any(path.glob("index.html")) or any(path.glob("*/index.html")),
+                       f"{label}: no index.html in {path.relative_to(root)}", warn=True)
+        for s in m.get("sims", []):
+            slug = s.get("slug", "?")
+            if "repo" in s:
+                ref = str(s.get("ref", ""))
+                rep.ok(ref not in BRANCH_REFS and bool(re.search(r"\d", ref)),
+                       f"sim {slug}: external sim must be pinned to a tag or commit, not {ref!r}")
+            else:
+                p = root / s.get("path", f"sims/{slug}")
+                if rep.ok(p.exists(), f"sim {slug}: {p.relative_to(root)} does not exist"):
+                    if (p / "SIM.toml").exists():
+                        check_repo(p, rep, nested=True, profile_override=pname)
+                    else:
+                        rep.ok(False, f"sim {slug}: {p.relative_to(root)} has no SIM.toml yet", warn=True)
+
+    code, out, _ = git("ls-files", cwd=root)
+    hits = []
+    if not code:
+        for rel in out.splitlines():
+            p = root / rel
+            if ABS_PATH_SKIP.search(rel) or p.suffix not in TEXT_SUFFIXES or not p.is_file():
+                continue
+            try:
+                if p.stat().st_size > 2_000_000:
+                    continue
+                for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+                    if ABS_PATH_RE.search(line) and "Managed by KIT" not in line:
+                        hits.append(f"{rel}:{i}")
+            except (UnicodeDecodeError, OSError):
+                continue
+    rep.ok(not hits, f"{len(hits)} absolute home-directory path(s): " + ", ".join(hits[:5])
+           + (" ..." if len(hits) > 5 else ""), warn=True)
+
+
+def cmd_check(a):
+    root = Path(a.path).resolve()
+    rep = Report(root)
+    check_repo(root, rep)
+    for w in rep.warns:
+        print(f"  warn  {w}")
+    for f in rep.fails:
+        print(f"  FAIL  {f}")
+    print(f"{root.name}: {rep.oks} ok, {len(rep.warns)} warning(s), {len(rep.fails)} failure(s)")
+    return 1 if rep.fails else 0
+
+
+def cmd_profiles(_a):
+    for p in sorted(PROFILES.glob("*.toml")):
+        prof = load_toml(p)
+        print(f"{p.stem:16} corpus={prof.get('corpus', {}).get('repo', '-')}  "
+              f"design={prof.get('design', {}).get('repo') or '-'}  workbench={prof.get('workbench', {}).get('repo') or '-'}")
+
+
+# --------------------------------------------------------------------------------------- main
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="scaffold", description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    n = sub.add_parser("new", help="create a study, a sim, or an app inside a study")
+    n.add_argument("kind", choices=("study", "sim", "app"))
+    n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
+    n.add_argument("--question", "-q", required=True, help="the question it asks (or what a sim simulates)")
+    n.add_argument("--profile", default=DEFAULT_PROFILE)
+    n.add_argument("--dir", default=".", help="parent directory for a new repo")
+    n.add_argument("--inside", help="create the sim inside this study (sims/<name>)")
+    n.add_argument("--study", default=".", help="for `new app`: the study to add it to")
+    n.add_argument("--kit-ap", help="path to kit_ap or a checkout of the prereg kit")
+    n.add_argument("--no-git", action="store_true", help="do not git init, commit, or install the kit")
+    n.set_defaults(fn=cmd_new)
+
+    p = sub.add_parser("promote-sim", help="move a sim out of a study into its own repo, with history")
+    p.add_argument("path")
+    p.add_argument("--dir", default="..", help="parent directory for the new repo")
+    p.set_defaults(fn=cmd_promote)
+
+    c = sub.add_parser("check", help="check a repo against the protocol")
+    c.add_argument("path", nargs="?", default=".")
+    c.set_defaults(fn=cmd_check)
+
+    sub.add_parser("profiles", help="list profiles").set_defaults(fn=cmd_profiles)
+
+    a = ap.parse_args(argv)
+    try:
+        return a.fn(a) or 0
+    except Fail as e:
+        print(f"scaffold: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

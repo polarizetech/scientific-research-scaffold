@@ -1,0 +1,12 @@
+kind = "sim"
+name = "{{name}}"
+question = "{{question}}"
+stage = "SKETCH"
+visibility = "private"
+visibility_decided = "{{date}}"
+profile = "{{profile}}"
+model = "model"
+
+[corpus]
+project = ""                     # empty until findings from this sim have a corpus home
+claim_prefix = ""

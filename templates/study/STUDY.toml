@@ -1,0 +1,13 @@
+kind = "study"
+name = "{{name}}"
+question = "{{question}}"
+stage = "SKETCH"
+visibility = "private"
+visibility_decided = "{{date}}"
+profile = "{{profile}}"
+
+[corpus]
+project = "{{name}}"
+claim_prefix = ""
+
+# Apps and sims are appended below by `scaffold new app` and `scaffold new sim --inside .`

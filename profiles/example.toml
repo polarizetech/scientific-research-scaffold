@@ -1,0 +1,29 @@
+# A profile names the repos a study depends on but never contains. Copy this file, fill it in,
+# and pass `--profile <name>` to `scaffold new`. See PROTOCOL.md § 1.
+name = "example"
+org = "your-github-org"
+author = "Your Name"
+orcid = ""                                   # optional, for CITATION.cff
+
+[corpus]                                     # the one shared record of claims and findings
+repo = "your-github-org/research"
+projects_dir = "projects"                    # a study's findings go in <repo>/<projects_dir>/<project>/
+
+[prereg]                                     # the preregistration kit, installed with `kit_ap init`
+repo = "polarizetech/adaptive-preregistration"
+modules = ["experiment-pr-log"]              # added after init's defaults (core, prereg, convo-log)
+
+[design]                                     # the design system every app serves; leave repo empty for none
+repo = ""
+ref = ""
+css = "design.css"
+js = ""
+
+[workbench]                                  # shared tools not yet released; leave repo empty for none
+repo = ""
+marker = ""                                  # a file that only exists in a real checkout of it
+env_aliases = []                             # older env var names, still honoured
+
+[licence]
+code = "MIT"
+docs = "CC-BY-4.0"

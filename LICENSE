@@ -1,0 +1,14 @@
+scientific-research-scaffold is released under two licences.
+
+Code: MIT (LICENSES/MIT.txt)
+  bin/, templates/**/*.py, templates/**/*.js, templates/**/*.css, tests/, .github/
+
+Protocol and documentation: Creative Commons Attribution 4.0 International,
+CC BY 4.0 (LICENSES/CC-BY-4.0.txt)
+  PROTOCOL.md, ADOPTING.md, README.md, the other Markdown files, and the
+  Markdown files under templates/
+
+Copyright (c) 2026 Joshua Anderton
+
+Repositories created from the templates are yours: the files scaffold writes
+into them carry no obligation beyond the SPDX header on code files.

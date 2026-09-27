@@ -1,0 +1,29 @@
+# The polarizetech profile: how studies and sims in github.com/polarizetech are wired.
+name = "polarizetech"
+org = "polarizetech"
+author = "Joshua Anderton"
+orcid = "https://orcid.org/0009-0004-0741-6962"
+
+[corpus]
+repo = "polarizetech/research"
+projects_dir = "projects"
+
+[prereg]
+repo = "polarizetech/adaptive-preregistration"
+modules = ["experiment-pr-log"]
+
+[design]
+repo = "polarizetech/polarize-ui"
+ref = "v0.4.2"
+css = "design.css"
+js = "design.js"
+
+[workbench]
+repo = "polarizetech/audio-projects"
+marker = "tools/REGISTRY.md"
+# An older variable name, still honoured.
+env_aliases = ["AUDIO_PROJECTS"]
+
+[licence]
+code = "MIT"
+docs = "CC-BY-4.0"
