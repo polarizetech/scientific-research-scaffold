@@ -40,7 +40,8 @@ class Scaffold(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self._env = {k: os.environ.get(k) for k in GIT_ENV}
         os.environ.update(GIT_ENV)
-        os.environ.pop("KIT_AP", None)
+        self._env["KIT_AP"] = os.environ.pop("KIT_AP", None)
+        self._env["SCAFFOLD_PROFILE"] = os.environ.pop("SCAFFOLD_PROFILE", None)
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
@@ -50,9 +51,10 @@ class Scaffold(unittest.TestCase):
             else:
                 os.environ[k] = v
 
-    def study(self, name="colony", profile="polarizetech"):
+    def study(self, name="colony", profile="polarizetech", visibility="private"):
+        vis = ["--visibility", visibility] if visibility else []
         code, out = run("new", "study", name, "-q", "Does it?", "--dir", str(self.tmp), "--profile", profile,
-                        "--no-git")
+                        *vis, "--no-git")
         self.assertEqual(code, 0, out)
         repo = self.tmp / name
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -75,12 +77,53 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(run("check", str(repo))[0], 0)
 
     def test_new_sim_standalone(self):
-        self.assertEqual(run("new", "sim", "memory", "-q", "Tape", "--dir", str(self.tmp), "--no-git")[0], 0)
+        self.assertEqual(run("new", "sim", "memory", "-q", "Tape", "--dir", str(self.tmp), "--profile", "example",
+                             "--visibility", "public", "--no-git")[0], 0)
         repo = self.tmp / "memory"
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
         fake_kit(repo)
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
+
+    def test_visibility_is_never_defaulted(self):
+        repo = self.study("undecided", visibility=None)
+        self.assertIn('visibility = "undecided"', (repo / "STUDY.toml").read_text())
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1, out)
+        self.assertIn("visibility is undecided", out)
+        self.assertIn("visibility_decided must be the date", out)
+
+    def test_visibility_flag_records_the_decision(self):
+        repo = self.study("decided", visibility="public")
+        m = scaffold.load_toml(repo / "STUDY.toml")
+        self.assertEqual(m["visibility"], "public")
+        self.assertEqual(m["visibility_decided"], scaffold._dt.date.today().isoformat())
+        self.assertEqual(run("check", str(repo))[0], 0)
+
+    def test_visibility_is_refused_for_a_sim_inside_a_study(self):
+        repo = self.study()
+        code, out = run("new", "sim", "inner", "-q", "Sim", "--inside", str(repo), "--visibility", "public")
+        self.assertEqual(code, 1)
+        self.assertIn("shares the study's visibility", out)
+
+    def test_there_is_no_default_profile(self):
+        code, out = run("new", "study", "orphan", "-q", "?", "--dir", str(self.tmp), "--no-git")
+        self.assertEqual(code, 1)
+        self.assertIn("no profile", out)
+        self.assertIn("SCAFFOLD_PROFILE", out)
+        self.assertFalse((self.tmp / "orphan").exists())
+
+    def test_profile_from_environment(self):
+        os.environ["SCAFFOLD_PROFILE"] = "example"
+        code, out = run("new", "study", "envy", "-q", "?", "--dir", str(self.tmp), "--no-git")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(scaffold.load_toml(self.tmp / "envy" / "STUDY.toml")["profile"], "example")
+
+    def test_study_manifest_profile_wins_over_environment(self):
+        repo = self.study("pinned", profile="example")
+        os.environ["SCAFFOLD_PROFILE"] = "polarizetech"
+        self.assertEqual(run("new", "sim", "inner", "-q", "Sim", "--inside", str(repo))[0], 0)
+        self.assertEqual(scaffold.load_toml(repo / "sims" / "inner" / "SIM.toml")["profile"], "example")
 
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """scaffold: create studies, sims and apps in the shape PROTOCOL.md describes, and check existing repos.
 
-  scaffold new study <name> --question "..." [--profile NAME] [--dir PARENT]
+  scaffold new study <name> --question "..." [--profile NAME] [--visibility public|private] [--dir PARENT]
   scaffold new sim <name> --question "..." [--inside STUDY]
   scaffold new app <slug> --question "..." [--study PATH]
   scaffold promote-sim <study>/sims/<slug>
@@ -11,6 +11,8 @@
 
 Stdlib only (Python 3.9+). Needs git. `new` installs the preregistration kit when it can find kit_ap
 (--kit-ap PATH, $KIT_AP, or a sibling checkout of the profile's prereg repo); otherwise it says how.
+There is no default profile: pass --profile NAME or set $SCAFFOLD_PROFILE. Visibility is left undecided
+unless --visibility is given, and `check` fails until it is decided.
 """
 import argparse
 import datetime as _dt
@@ -25,11 +27,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parents[1]
 TEMPLATES = HERE / "templates"
 PROFILES = HERE / "profiles"
-DEFAULT_PROFILE = "polarizetech"
 
 KINDS = ("study", "sim")
 STAGES = ("SKETCH", "PROBE", "BENCH", "SHIPPED")
 APP_STATUSES = ("active", "superseded", "abandoned")
+VISIBILITIES = ("public", "private")
+UNDECIDED = "undecided"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 #: Kind prefixes the protocol retires (PROTOCOL.md § 1). The kind belongs in the manifest.
 KIND_PREFIXES = ("lab-", "sim-", "study-", "case-", "exp-")
@@ -155,6 +158,16 @@ def load_profile(name):
         have = ", ".join(sorted(x.stem for x in PROFILES.glob("*.toml")))
         raise Fail(f"no profile {name!r} in {PROFILES} (have: {have})")
     return load_toml(p)
+
+
+def profile_name(explicit=None, manifest=None):
+    """The profile to use: the manifest's, then --profile, then $SCAFFOLD_PROFILE. Never a built-in default."""
+    name = (manifest or {}).get("profile") or explicit or os.environ.get("SCAFFOLD_PROFILE")
+    if not name:
+        have = ", ".join(sorted(x.stem for x in PROFILES.glob("*.toml")))
+        raise Fail(f"no profile: pass --profile NAME or set SCAFFOLD_PROFILE (have: {have}). "
+                   f"To make your own, copy profiles/example.toml")
+    return name
 
 
 def check_name(name):
@@ -285,18 +298,21 @@ def cmd_new(a):
     inside = Path(a.inside).resolve() if getattr(a, "inside", None) else None
     if a.kind == "study" and inside:
         raise Fail("--inside is for sims; a study is always its own repo")
+    if inside and a.visibility:
+        raise Fail("--visibility is for a repo; a sim inside a study shares the study's visibility")
     if inside:
         study_manifest = inside / "STUDY.toml"
         if not study_manifest.exists():
             raise Fail(f"{inside} has no STUDY.toml")
-        profile = load_profile(load_toml(study_manifest).get("profile") or a.profile)
+        profile = load_profile(profile_name(a.profile, load_toml(study_manifest)))
         dest = inside / "sims" / a.name
     else:
-        profile = load_profile(a.profile)
+        profile = load_profile(profile_name(a.profile))
         dest = Path(a.dir).resolve() / a.name
     if dest.exists() and any(dest.iterdir()):
         raise Fail(f"{dest} already exists and is not empty")
-    v = template_vars(profile, a.name, a.question)
+    v = template_vars(profile, a.name, a.question, visibility=a.visibility or UNDECIDED,
+                      visibility_decided=_dt.date.today().isoformat() if a.visibility else "")
     skip = ()
     if a.kind == "study" and not profile.get("workbench", {}).get("repo"):
         skip = ("shared/workbench.py",)
@@ -320,8 +336,14 @@ def cmd_new(a):
         print(f"  ! initial commit failed: {err}")
     install_kit(dest, profile, find_kit_ap(a.kit_ap, profile))
     org = profile.get("org", "<org>")
-    print(f"\nNext: decide visibility (it is recorded in the manifest), then\n"
-          f"      gh repo create {org}/{a.name} --private --source {dest} --push")
+    manifest = f"{a.kind.upper()}.toml"
+    if a.visibility:
+        print(f"\nNext: gh repo create {org}/{a.name} --{a.visibility} --source {dest} --push")
+    else:
+        print(f"\nNext: decide visibility, and record it in {manifest} (`scaffold check` fails until you do):\n"
+              f'      visibility = "public" or "private"\n'
+              f'      visibility_decided = "{_dt.date.today().isoformat()}"\n'
+              f"then  gh repo create {org}/{a.name} --<public|private> --source {dest} --push")
 
 
 def new_app(a):
@@ -331,7 +353,7 @@ def new_app(a):
         raise Fail(f"{study} has no STUDY.toml; apps belong to studies")
     check_name(a.name)
     m = load_toml(manifest_path)
-    profile = load_profile(m.get("profile") or DEFAULT_PROFILE)
+    profile = load_profile(profile_name(a.profile, m))
     apps = m.get("apps", [])
     nums = [int(x["version"][1:]) for x in apps if re.fullmatch(r"v\d+", str(x.get("version", "")))]
     version = f"v{max(nums, default=0) + 1}"
@@ -375,13 +397,14 @@ def cmd_promote(a):
     git("checkout", "-q", "-b", "main", cwd=dest)
     git("remote", "remove", "origin", cwd=dest)
     m = load_toml(sim / "SIM.toml")
-    profile = load_profile(m.get("profile") or DEFAULT_PROFILE)
-    org = profile.get("org", "<org>")
+    pname = m.get("profile") or os.environ.get("SCAFFOLD_PROFILE")
+    org = load_profile(pname).get("org", "<org>") if pname else "<org>"
     print(f"""
 promoted to {dest}, with history. Remaining, in order (PROTOCOL.md § 6):
   1. In {dest}: add the repo-level files a standalone sim owes (LICENSE, CLAUDE.md, CITATION.cff,
      pyproject.toml, CI); `scaffold check {dest}` lists what is missing. Install the prereg kit.
-  2. Decide visibility, then:  gh repo create {org}/{name} --private --source {dest} --push
+  2. Decide visibility and record it in SIM.toml (visibility, visibility_decided), then:
+         gh repo create {org}/{name} --<public|private> --source {dest} --push
   3. Tag the current model:    git -C {dest} tag -a model-v0.1.0 -m "promoted from {top.name}"
   4. In {top.name}: delete {prefix}, and replace its [[sims]] entry with
          repo = "{org}/{name}"
@@ -452,7 +475,10 @@ def check_repo(root, rep, nested=False, profile_override=None):
     if nested:
         return
 
-    rep.ok(m.get("visibility") in ("public", "private"), "visibility must be 'public' or 'private', decided")
+    vis = m.get("visibility")
+    rep.ok(vis in VISIBILITIES,
+           f"visibility is undecided: decide it, then set visibility = 'public' or 'private' in {kind.upper()}.toml"
+           if vis in (None, "", UNDECIDED) else f"visibility must be 'public' or 'private', not {vis!r}")
     rep.ok(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(m.get("visibility_decided", "")))),
            "visibility_decided must be the date (YYYY-MM-DD) visibility was decided")
     for f in ("CLAUDE.md", "AGENTS.md", "LICENSE", "EXPERIMENTS.md", "RESEARCH.md"):
@@ -544,7 +570,9 @@ def main(argv=None):
     n.add_argument("kind", choices=("study", "sim", "app"))
     n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
     n.add_argument("--question", "-q", required=True, help="the question it asks (or what a sim simulates)")
-    n.add_argument("--profile", default=DEFAULT_PROFILE)
+    n.add_argument("--profile", help="profile name (default: $SCAFFOLD_PROFILE; there is no built-in default)")
+    n.add_argument("--visibility", choices=VISIBILITIES,
+                   help="record a visibility decision already made (default: left undecided; check fails until set)")
     n.add_argument("--dir", default=".", help="parent directory for a new repo")
     n.add_argument("--inside", help="create the sim inside this study (sims/<name>)")
     n.add_argument("--study", default=".", help="for `new app`: the study to add it to")

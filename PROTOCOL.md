@@ -31,7 +31,9 @@ library. Nothing in it resolves a path on one person's machine.
 | **study** | one research question and everything used to pursue it | as tags and as `apps/vN-*` folders |
 | **sim** | one simulator, under adaptive preregistration | as `model-vX.Y.Z` tags inside one repo |
 
-A profile fills five **roles** that studies and sims depend on but never contain:
+A profile fills five **roles** that studies and sims depend on but never contain. There is no default
+profile: `scaffold new` takes `--profile NAME` or `$SCAFFOLD_PROFILE`, and a study's manifest records which
+one it uses from then on.
 
 | role | what it provides | example (polarizetech profile) |
 |---|---|---|
@@ -63,7 +65,7 @@ kind = "study"
 name = "reef-acoustics"
 question = "Does the sound of a reef track its coral cover across survey sites?"
 stage = "SKETCH"                 # SKETCH | PROBE | BENCH | SHIPPED (§ 9)
-visibility = "private"           # decided, never defaulted
+visibility = "private"           # public | private: decided, never defaulted
 visibility_decided = "2026-01-15"
 profile = "polarizetech"
 
@@ -86,6 +88,9 @@ slug = "fish-chorus"
 repo = "your-org/fish-chorus"
 ref = "model-v0.2.0"             # a tag. Never a branch.
 ```
+
+**Visibility is a person's decision.** `scaffold new` writes `visibility = "undecided"` unless it is given
+`--visibility public|private`, and `scaffold check` fails until a decision and its date are recorded.
 
 Experiments are registered in `EXPERIMENTS.md` (the prereg kit's register), not duplicated here.
 
@@ -259,7 +264,7 @@ and saying plainly what was not done.
 | manifest parses, and `kind`, `name`, `question`, `stage` are valid | ✓ | ✓ | ✓ |
 | no `lab-`/`sim-`/`study-` style prefix on the name | ✓ | ✓ | ✓ |
 | README kind line matches the manifest | ✓ | ✓ | ✓ |
-| `visibility` is set, with the date it was decided | ✓ | ✓ | |
+| `visibility` is decided (`public` or `private`, not `undecided`), with the date | ✓ | ✓ | |
 | `CLAUDE.md`, `AGENTS.md`, `LICENSE`, `EXPERIMENTS.md` exist | ✓ | ✓ | |
 | prereg kit installed (`.agents/kit_ap.lock` with the `prereg` module) | ✓ | ✓ | |
 | `RESEARCH.md` exists and names a corpus project | ✓ | ✓ | |

@@ -32,9 +32,10 @@ Studies and sims build on four other pieces, named in a **profile** so the proto
 git clone https://github.com/polarizetech/scientific-research-scaffold.git
 git clone https://github.com/polarizetech/adaptive-preregistration.git   # found automatically as a sibling
 cd ~/code
+export SCAFFOLD_PROFILE=example   # or your own; there is no built-in default (see below)
 
 scientific-research-scaffold/bin/scaffold new study reef-acoustics \
-  -q "Does the sound of a reef track its coral cover?"
+  -q "Does the sound of a reef track its coral cover?" --visibility private
 cd reef-acoustics
 ../scientific-research-scaffold/bin/scaffold new app site-listener -q "Can a degraded site be heard?"
 ../scientific-research-scaffold/bin/scaffold new sim sound-propagation -q "How reef sound carries" --inside .
@@ -42,11 +43,12 @@ cd reef-acoustics
 ```
 
 `new study` renders the template, makes the first commit, installs the preregistration kit and prints
-the `gh repo create` line, leaving the visibility decision to you. It never publishes anything.
+the `gh repo create` line. It never publishes anything. Visibility is yours to decide: without
+`--visibility public|private` the manifest says `undecided`, and `check` fails until you record a decision.
 
 | command | does |
 |---|---|
-| `scaffold new study <name> -q "..."` | a new study repo |
+| `scaffold new study <name> -q "..." [--visibility public\|private]` | a new study repo |
 | `scaffold new sim <name> -q "..." [--inside STUDY]` | a new sim repo, or a sim folder inside a study |
 | `scaffold new app <slug> -q "..."` | the next `apps/vN-<slug>/` in the current study, registered in `STUDY.toml` |
 | `scaffold promote-sim sims/<slug>` | split a sim out of a study into its own repo, keeping its history |
@@ -59,7 +61,8 @@ Requirements: Python 3.9+ and git. No other dependencies.
 
 The protocol is written to be forked. Copy [`profiles/example.toml`](profiles/example.toml), name your own
 corpus, preregistration kit, design system and workbench (any can be left empty), and pass
-`--profile <name>`. [`profiles/polarizetech.toml`](profiles/polarizetech.toml) is ours, as a worked example.
+`--profile <name>` (or set `SCAFFOLD_PROFILE`). There is no default profile, so nothing of ours ends up in your
+repos by accident. [`profiles/polarizetech.toml`](profiles/polarizetech.toml) is ours, as a worked example.
 
 ## Licence
 
