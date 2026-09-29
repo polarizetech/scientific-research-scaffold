@@ -8,6 +8,12 @@
   holds research (a question, `[corpus]`, `RESEARCH.md`, `EXPERIMENTS.md`, `experiments/`), whose version
   differs across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and `CHANGELOG.md`, or whose consumers
   don't say what they use. Modelled on the `TOOL.toml` an existing tool repo already used; PROTOCOL.md § 7.
+- **`scaffold status` and `scaffold update`.** `status` gives one line per repo: kind, stage, scaffold
+  release, CI ref, check result and pending update. `update` brings a repo's scaffold-owned files (the CI
+  workflow, `Makefile`, `shared/workbench.py`) up to this release. It replaces only files nobody edited,
+  known from the new `.scaffold.lock` that `new` writes, or by matching what an earlier release wrote. In
+  an edited workflow it moves only the scaffold `ref:`; other edited files are kept unless `--adopt`ed. A
+  dry run unless `--apply`; refuses to overwrite uncommitted work; never commits. PROTOCOL.md § 12.
 - Studies and sims list the tools they use under `[[tools]]`, and `check` fails a tool pinned to a branch.
 - PROTOCOL.md sections from Preregistration on are renumbered by one (Preregistration is now § 8).
 - The built-in TOML parser (Python < 3.11) reads arrays that span lines, and decodes non-ASCII strings

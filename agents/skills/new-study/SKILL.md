@@ -21,5 +21,10 @@ current repo, or ask); never guess a home-directory path.
    the answer and today's date in the manifest. Then show the `gh repo create` line and ask.
 4. **Check it:** `scaffold check`. It must pass before anything else is added.
 
+To bring existing repos up to the current scaffold, run `scaffold status <paths>` for the overview, then
+`scaffold update <repo>` (a dry run) for each repo, and show the person the plan. Run `--apply` only with
+their go-ahead, and never pass `--adopt` for a file they have not agreed to lose their edits in. Leave the
+result uncommitted for them to review.
+
 For an existing repo, follow `ADOPTING.md`: additive first (manifest with `path` entries, kind line,
 RESEARCH.md, the kit), and the repo's own gate must pass exactly as before.

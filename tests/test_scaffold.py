@@ -209,6 +209,142 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("tool loose: must be pinned to a tag", out)
 
+    # ------------------------------------------------------------------------- status, update
+
+    def committed(self, repo):
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "state"], cwd=repo, check=True)
+
+    def plan(self, repo, **kw):
+        return {rel: action for rel, action, *_ in scaffold.plan_update(repo, **kw)[2]}
+
+    def test_new_repo_records_its_files_and_is_up_to_date(self):
+        repo = self.study()
+        lock = scaffold.read_lock(repo)
+        self.assertEqual(lock["scaffold"], scaffold.SCAFFOLD_REF)
+        self.assertEqual(set(lock["files"]), {".github/workflows/check.yml", "Makefile", "shared/workbench.py"})
+        self.assertEqual(set(self.plan(repo).values()), {"current"})
+        self.assertEqual(scaffold.read_lock(self.tool())["files"].keys(), {".github/workflows/check.yml", "Makefile"})
+
+    def age(self, repo, ref="v0.0.9"):
+        """Make the repo look as if an earlier release wrote its CI, and nobody has touched it since."""
+        ci = repo / ".github" / "workflows" / "check.yml"
+        ci.write_text(ci.read_text().replace(f"ref: {scaffold.SCAFFOLD_REF}", f"ref: {ref}"))
+        lock = scaffold.read_lock(repo)
+        lock["files"][".github/workflows/check.yml"] = scaffold.sha256(ci.read_text())
+        (repo / scaffold.LOCK).write_text(scaffold.json.dumps(lock))
+        return ci
+
+    def test_update_replaces_what_nobody_edited(self):
+        repo = self.study()
+        ci = self.age(repo)
+        self.committed(repo)
+        self.assertEqual(self.plan(repo)[".github/workflows/check.yml"], "update")
+        code, out = run("update", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("dry run", out)
+        self.assertIn("ref: v0.0.9", ci.read_text())
+        code, out = run("update", str(repo), "--apply")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"ref: {scaffold.SCAFFOLD_REF}", ci.read_text())
+        self.assertEqual(scaffold.read_lock(repo)["files"][".github/workflows/check.yml"],
+                         scaffold.sha256(ci.read_text()))
+        self.assertEqual(set(self.plan(repo).values()), {"current"})
+
+    def test_update_keeps_edited_files_unless_adopted(self):
+        repo = self.study()
+        make = repo / "Makefile"
+        make.write_text(make.read_text() + "\ntest:\n\tpytest\n")
+        self.committed(repo)
+        self.assertEqual(self.plan(repo)["Makefile"], "edited")
+        self.assertEqual(run("update", str(repo), "--apply")[0], 0)
+        self.assertIn("pytest", make.read_text())
+        self.assertNotIn("Makefile", scaffold.read_lock(repo)["files"])
+        code, out = run("update", str(repo), "--apply", "--adopt", "Makefile")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("\ntest:", make.read_text())
+        self.assertEqual(run("update", str(repo), "--adopt", "README.md")[0], 1)
+
+    def test_update_pins_the_scaffold_ref_in_an_edited_workflow(self):
+        repo = self.study()
+        ci = self.age(repo, ref="main")
+        ci.write_text(ci.read_text() + "      - run: make extra\n")
+        self.committed(repo)
+        self.assertEqual(self.plan(repo)[".github/workflows/check.yml"], "pin")
+        self.assertEqual(run("update", str(repo), "--apply")[0], 0)
+        text = ci.read_text()
+        self.assertIn(f"ref: {scaffold.SCAFFOLD_REF}", text)
+        self.assertIn("make extra", text)
+        self.assertNotIn(".github/workflows/check.yml", scaffold.read_lock(repo)["files"])
+
+    def test_update_never_adds_files_to_an_adopted_repo_unasked(self):
+        repo = self.study()
+        (repo / scaffold.LOCK).unlink()
+        (repo / "Makefile").unlink()
+        self.committed(repo)
+        self.assertEqual(self.plan(repo)["Makefile"], "missing")
+        self.assertEqual(run("update", str(repo), "--apply")[0], 0)
+        self.assertFalse((repo / "Makefile").exists())
+        self.assertEqual(run("update", str(repo), "--apply", "--adopt", "Makefile")[0], 0)
+        self.assertTrue((repo / "Makefile").exists())
+
+    def test_update_refuses_to_overwrite_uncommitted_work(self):
+        repo = self.study()
+        ci = self.age(repo)
+        self.committed(repo)
+        with ci.open("a") as f:
+            f.write("# mine\n")
+        lock = scaffold.read_lock(repo)
+        lock["files"][".github/workflows/check.yml"] = scaffold.sha256(ci.read_text())
+        (repo / scaffold.LOCK).write_text(scaffold.json.dumps(lock))
+        code, out = run("update", str(repo), "--apply")
+        self.assertEqual(code, 1)
+        self.assertIn("uncommitted changes", out)
+        self.assertIn("# mine", ci.read_text())
+
+    @unittest.skipUnless((ROOT / ".git").exists(), "needs this scaffold's git history")
+    def test_update_recognises_an_earlier_release_without_a_lock(self):
+        repo = self.study()
+        ci = repo / ".github" / "workflows" / "check.yml"
+        ci.write_text(ci.read_text().replace(f"ref: {scaffold.SCAFFOLD_REF}", "ref: main"))
+        (repo / scaffold.LOCK).unlink()
+        self.assertEqual(self.plan(repo)[".github/workflows/check.yml"], "update")
+
+    def test_a_sim_inside_a_study_is_updated_with_the_study(self):
+        repo = self.study()
+        self.assertEqual(run("new", "sim", "inner", "-q", "Sim", "--inside", str(repo))[0], 0)
+        code, out = run("update", str(repo / "sims" / "inner"))
+        self.assertEqual(code, 1)
+        self.assertIn("update the study", out)
+
+    def test_pin_scaffold_ref(self):
+        wf = ("      - id: scaffold\n"
+              "        uses: actions/checkout@v4\n"
+              "        with:\n"
+              "          ref: main\n"
+              "          repository: someone/scientific-research-scaffold\n"
+              "          token: ${{ secrets.T }}\n"
+              "      - uses: actions/checkout@v4\n"
+              "        with:\n"
+              "          repository: someone/other\n"
+              "          ref: main\n")
+        text, old = scaffold.pin_scaffold_ref(wf, "v9.9.9")
+        self.assertEqual(old, "main")
+        self.assertEqual(text.count("ref: v9.9.9"), 1)
+        self.assertIn("repository: someone/other\n          ref: main", text)
+        self.assertEqual(scaffold.pin_scaffold_ref("jobs: {}\n", "v1.0.0"), ("jobs: {}\n", None))
+
+    def test_status_surveys_many_repos(self):
+        study, tool = self.study(), self.tool()
+        (self.tmp / "loose").mkdir()
+        code, out = run("status", str(study), str(tool), str(self.tmp / "loose"))
+        self.assertEqual(code, 0, out)
+        lines = out.splitlines()
+        self.assertTrue(lines[0].startswith("repo"))
+        self.assertRegex(out, r"colony\s+study\s+SKETCH\s+v\d+\.\d+\.\d+\s+v\d+\.\d+\.\d+\s+ok\s+up to date")
+        self.assertRegex(out, r"recorder\s+tool")
+        self.assertRegex(out, r"loose\s+-\s+.*no manifest")
+
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):
             self.assertEqual(run("new", "study", bad, "-q", "?", "--dir", str(self.tmp), "--no-git")[0], 1, bad)

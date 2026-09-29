@@ -54,7 +54,19 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 | `scaffold new app <slug> -q "..."` | the next `apps/vN-<slug>/` in the current study, registered in `STUDY.toml` |
 | `scaffold promote-sim sims/<slug>` | split a sim out of a study into its own repo, keeping its history |
 | `scaffold check [PATH]` | check a repo against the protocol; nonzero exit on failure, for CI |
+| `scaffold status [PATH ...]` | one line per repo: kind, stage, scaffold release, CI ref, check result, pending update |
+| `scaffold update [PATH] [--apply] [--adopt FILE]` | bring the files the scaffold owns up to this release; a dry run unless `--apply` |
 | `scaffold profiles` | list profiles |
+
+### Keeping repos current
+
+`scaffold status ~/code/*` surveys every repo at once. `scaffold update` brings one repo's
+**scaffold-owned files** (the CI workflow, the `Makefile`, `shared/workbench.py`) up to this release,
+and never touches anything else. It replaces a file only when nobody has edited it since the scaffold
+wrote it, which it knows from `.scaffold.lock`, or by matching the file against what each earlier
+release would have written. An edited CI workflow gets only its scaffold `ref:` moved. Any other
+edited file is kept, with the difference shown; `--adopt FILE` replaces it anyway. It prints a dry
+run first, writes nothing without `--apply`, refuses to overwrite uncommitted work, and never commits.
 
 Requirements: Python 3.9+ and git. No other dependencies.
 

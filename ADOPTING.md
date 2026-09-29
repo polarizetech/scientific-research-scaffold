@@ -24,6 +24,9 @@ not break any of them, so adoption is **additive first, moves later**.
    has a `CLAUDE.md`, the kit adds an `@AGENTS.md` import to it and leaves the rest alone.
 6. Add a `LICENSE` if there is none, once the licence is decided.
 7. Run the repo's own gate. It must pass exactly as it did before.
+8. Optionally, run `scaffold update` to see how the repo's CI workflow and `Makefile` compare with the
+   scaffold's. In an adopted repo it adds nothing unless asked (`--adopt FILE`). An edited workflow only
+   gets its scaffold `ref:` moved.
 
 ### A tool
 

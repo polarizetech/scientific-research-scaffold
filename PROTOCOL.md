@@ -339,6 +339,31 @@ It exits nonzero on any failure, so it can gate CI. Warnings are printed and do 
 
 ---
 
+## 12. Keeping repos current
+
+This section is advice about the tool, not rules `check` enforces.
+
+A repo the scaffold made records what it wrote in `.scaffold.lock`: the release, and a hash of each
+file the scaffold **owns**. Those are the CI workflow, the `Makefile` and, in a study, `shared/workbench.py`.
+Everything else belongs to the repo from the moment it is created.
+
+`scaffold update` moves the owned files to the current release:
+
+| the file is | update |
+|---|---|
+| missing, in a repo the scaffold made | adds it |
+| missing, in a repo that adopted the protocol | reports it; `--adopt FILE` adds it |
+| unedited (its hash is in the lock, or it matches what an earlier release wrote) | replaces it |
+| an edited CI workflow whose scaffold `ref:` is behind | moves only that line |
+| otherwise edited | keeps it and shows the difference; `--adopt FILE` replaces it |
+
+It is a dry run unless given `--apply`, refuses to overwrite uncommitted changes, and leaves the result
+uncommitted for review. `scaffold status` gives one line per repo, so a whole organisation can be
+surveyed at once. Structural changes, such as moving research out of a tool, are never made
+automatically; `check` names them and a person does them.
+
+---
+
 ## Where this comes from
 
 The rules are drawn from practice written up in: Noble (2009) on organising a computational project;
