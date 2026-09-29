@@ -126,6 +126,89 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(run("new", "sim", "inner", "-q", "Sim", "--inside", str(repo))[0], 0)
         self.assertEqual(scaffold.load_toml(repo / "sims" / "inner" / "SIM.toml")["profile"], "example")
 
+    def tool(self, name="recorder"):
+        code, out = run("new", "tool", name, "-j", "Records a signal", "--dir", str(self.tmp),
+                        "--profile", "example", "--visibility", "public", "--no-git")
+        self.assertEqual(code, 0, out)
+        repo = self.tmp / name
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        (repo / "AGENTS.md").write_text("<!-- kit_ap:start -->\n<!-- kit_ap:end -->\n")
+        return repo
+
+    def test_new_tool_passes_check(self):
+        repo = self.tool()
+        m = scaffold.load_toml(repo / "TOOL.toml")
+        self.assertEqual((m["kind"], m["job"], m["version"]), ("tool", "Records a signal", "0.0.0"))
+        self.assertNotIn("question", m)
+        for research in scaffold.RESEARCH_FILES:
+            self.assertFalse((repo / research).exists(), research)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+
+    def test_tool_takes_a_job_not_a_question(self):
+        for args in (["-q", "Does it?"], ["-q", "Does it?", "-j", "Records"], []):
+            code, out = run("new", "tool", "gauge", *args, "--dir", str(self.tmp), "--profile", "example",
+                            "--no-git")
+            self.assertEqual(code, 1, args)
+            self.assertIn("--job", out)
+        code, out = run("new", "study", "asks", "-j", "Records", "--dir", str(self.tmp), "--profile", "example",
+                        "--no-git")
+        self.assertEqual(code, 1)
+        self.assertIn("needs --question", out)
+        code, out = run("new", "tool", "inner", "-j", "Records", "--inside", str(self.study()))
+        self.assertEqual(code, 1)
+        self.assertIn("always its own repo", out)
+
+    def test_tool_holds_no_research(self):
+        repo = self.tool()
+        (repo / "EXPERIMENTS.md").write_text("# Experiments\n")
+        (repo / "experiments").mkdir()
+        with (repo / "TOOL.toml").open("a") as f:
+            f.write('question = "Does it?"\n\n[corpus]\nproject = "x"\n')
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        for needle in ("EXPERIMENTS.md is research", "experiments is research", "TOOL.toml has 'question'",
+                       "TOOL.toml has 'corpus'"):
+            self.assertIn(needle, out)
+
+    def test_tool_version_is_said_once(self):
+        repo = self.tool()
+        manifest = repo / "TOOL.toml"
+        manifest.write_text(manifest.read_text().replace('version = "0.0.0"', 'version = "0.2.0"'))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        for needle in ("pyproject.toml says version 0.0.0, TOOL.toml says 0.2.0",
+                       "CITATION.cff says version 0.0.0, TOOL.toml says 0.2.0",
+                       "CHANGELOG.md has no heading for version 0.2.0"):
+            self.assertIn(needle, out)
+        for f in ("pyproject.toml", "CITATION.cff"):
+            (repo / f).write_text((repo / f).read_text().replace("0.0.0", "0.2.0"))
+        with (repo / "CHANGELOG.md").open("a") as f:
+            f.write("\n## [0.2.0] (2026-09-29)\n")
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+
+    def test_tool_consumers_say_what_they_use(self):
+        repo = self.tool()
+        with (repo / "TOOL.toml").open("a") as f:
+            f.write('\n[[consumers]]\nname = "colony"\nrepo = "o/colony"\nuses = ["GET /status"]\n'
+                    '\n[[consumers]]\nname = "vague"\nrepo = "o/vague"\n')
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("consumer vague: list what it relies on", out)
+        self.assertNotIn("consumer colony", out)
+
+    def test_study_pins_its_tools_to_a_tag(self):
+        repo = self.study()
+        with (repo / "STUDY.toml").open("a") as f:
+            f.write('\n[[tools]]\nslug = "recorder"\nrepo = "o/recorder"\nref = "v0.3.0"\n')
+        self.assertEqual(run("check", str(repo))[0], 0)
+        with (repo / "STUDY.toml").open("a") as f:
+            f.write('\n[[tools]]\nslug = "loose"\nrepo = "o/loose"\nref = "main"\n')
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("tool loose: must be pinned to a tag", out)
+
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):
             self.assertEqual(run("new", "study", bad, "-q", "?", "--dir", str(self.tmp), "--no-git")[0], 1, bad)
@@ -167,13 +250,34 @@ class Scaffold(unittest.TestCase):
         self.assertEqual((ref, changelog), (f"v{citation}", f"v{citation}"),
                          "scaffold_ref, CITATION.cff and the newest CHANGELOG heading must name the same release")
 
+    def test_mini_toml_reads_multiline_arrays(self):
+        """Runs on every Python: the built-in parser is the only one 3.9 and 3.10 have."""
+        p = ROOT / "tests" / "fixtures" / "multiline.toml"
+        m = scaffold._mini_toml(p.read_text(encoding="utf-8"), p)
+        self.assertEqual(m["job"], "Records one channel at 250 Hz, in µV")
+        self.assertEqual(m["empty"], [])
+        self.assertEqual(m["flat"], ["a", "b # not a comment", "lit]eral"])
+        self.assertEqual([c["name"] for c in m["consumers"]], ["colony", "bench"])
+        self.assertEqual(m["consumers"][0]["uses"], ["apps/server/rig.py UV_PER_COUNT", "GET /status rateMeasured",
+                                                     "black-box CSV format sample_index,value,t_us"])
+        self.assertEqual(m["consumers"][1]["uses"], ["one", "two", "three"])
+        with self.assertRaises(scaffold.Fail):
+            scaffold._mini_toml('uses = [\n  "never closed",\n', "open.toml")
+
     def test_mini_toml_matches_tomllib(self):
         try:
             import tomllib
         except ImportError:
             self.skipTest("tomllib needs Python 3.11+")
-        for p in [*sorted((ROOT / "profiles").glob("*.toml"))]:
-            self.assertEqual(scaffold._mini_toml(p.read_text(), p), tomllib.loads(p.read_text()), p.name)
+        rendered = self.tmp / "rendered"
+        for kind in ("study", "sim", "tool"):
+            scaffold.render(scaffold.TEMPLATES / kind, rendered / kind,
+                            {**scaffold.template_vars({}, "x", "Does it?"), "job": "Does a job",
+                             "visibility": "private", "visibility_decided": "2026-01-01"})
+        for p in [*sorted((ROOT / "profiles").glob("*.toml")), ROOT / "tests" / "fixtures" / "multiline.toml",
+                  *sorted(rendered.glob("*/*.toml"))]:
+            text = p.read_text(encoding="utf-8")
+            self.assertEqual(scaffold._mini_toml(text, p), tomllib.loads(text), p.name)
 
 
 if __name__ == "__main__":

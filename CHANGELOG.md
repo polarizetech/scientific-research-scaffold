@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **The tool kind.** A third kind of repo, for one job done for other repos with no research in it:
+  `TOOL.toml` with a `job` in place of a question, a `version`, and `[[consumers]]` naming what each
+  dependent repo `uses`. `scaffold new tool <name> --job "..."` creates one. `check` fails a tool that
+  holds research (a question, `[corpus]`, `RESEARCH.md`, `EXPERIMENTS.md`, `experiments/`), whose version
+  differs across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and `CHANGELOG.md`, or whose consumers
+  don't say what they use. Modelled on the `TOOL.toml` an existing tool repo already used; PROTOCOL.md § 7.
+- Studies and sims list the tools they use under `[[tools]]`, and `check` fails a tool pinned to a branch.
+- PROTOCOL.md sections from Preregistration on are renumbered by one (Preregistration is now § 8).
+- The built-in TOML parser (Python < 3.11) reads arrays that span lines, and decodes non-ASCII strings
+  correctly; before, `"µV"` came back garbled.
+
 ## v0.2.0 (2026-09-29)
 
 - **No default profile.** `scaffold new` takes `--profile NAME` or `$SCAFFOLD_PROFILE`, and fails with the

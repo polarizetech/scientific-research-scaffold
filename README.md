@@ -1,19 +1,19 @@
 # scientific-research-scaffold
 
 A protocol for laying out research across repositories, and `scaffold`, a small CLI that sets up new
-studies and simulators in that shape and checks existing ones against it.
+studies, simulators and tools in that shape and checks existing ones against it.
 
 - **The protocol:** [`PROTOCOL.md`](PROTOCOL.md)
 - **Bringing an existing repo onto it:** [`ADOPTING.md`](ADOPTING.md)
 
-## Two kinds of repo
+## Three kinds of repo
 
-| | a **study** | a **sim** |
-|---|---|---|
-| is | one research question, and everything used to pursue it | one simulator, under adaptive preregistration |
-| holds | versioned exploratory apps, sims still in development, preregistered experiments, dataset pins | the model, its experiments, its assumptions |
-| versions | `apps/v1-*`, `apps/v2-*` folders, and tags | `model-vX.Y.Z` tags, all in one repo |
-| findings go to | the shared research corpus, referenced by claim ID | the same |
+| | a **study** | a **sim** | a **tool** |
+|---|---|---|---|
+| is | one research question, and everything used to pursue it | one simulator, under adaptive preregistration | one job done for other repos: an instrument, a recorder, a service, a library |
+| holds | versioned exploratory apps, sims still in development, preregistered experiments, dataset pins | the model, its experiments, its assumptions | the tool, and the list of repos that depend on it and what they use |
+| versions | `apps/v1-*`, `apps/v2-*` folders, and tags | `model-vX.Y.Z` tags, all in one repo | `vX.Y.Z` tags, one version said the same everywhere |
+| findings go to | the shared research corpus, referenced by claim ID | the same | none: a tool holds no research |
 
 A sim starts as a folder inside the study that needs it, and moves to its own repo when a second study
 uses it, it needs its own releases, or it is shared on its own. Repos are named for their subject, with no
@@ -50,6 +50,7 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 |---|---|
 | `scaffold new study <name> -q "..." [--visibility public\|private]` | a new study repo |
 | `scaffold new sim <name> -q "..." [--inside STUDY]` | a new sim repo, or a sim folder inside a study |
+| `scaffold new tool <name> -j "..."` | a new tool repo: a job, not a question |
 | `scaffold new app <slug> -q "..."` | the next `apps/vN-<slug>/` in the current study, registered in `STUDY.toml` |
 | `scaffold promote-sim sims/<slug>` | split a sim out of a study into its own repo, keeping its history |
 | `scaffold check [PATH]` | check a repo against the protocol; nonzero exit on failure, for CI |

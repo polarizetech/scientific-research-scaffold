@@ -1,0 +1,20 @@
+name: check
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: polarizetech/scientific-research-scaffold
+          ref: {{scaffold_ref}}
+          path: .scaffold
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen || uv sync
+      - run: make check SCAFFOLD="python3 .scaffold/bin/scaffold"

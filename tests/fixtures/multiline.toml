@@ -1,0 +1,24 @@
+# The shapes real manifests use that a one-line parser misses.
+kind = "tool"
+name = "recorder"
+job = "Records one channel at 250 Hz, in µV"   # non-ASCII, and a comment after a value
+empty = []
+flat = ["a", "b # not a comment", 'lit]eral']
+
+[extensions]
+group = "recorder.extensions"
+
+[[consumers]]
+name = "colony"
+repo = "o/colony"
+uses = [
+  "apps/server/rig.py UV_PER_COUNT",   # a comment inside the array
+  "GET /status rateMeasured",
+  "black-box CSV format sample_index,value,t_us",
+]
+
+[[consumers]]
+name = "bench"
+repo = "o/bench"
+uses = ["one", "two",
+        "three"]

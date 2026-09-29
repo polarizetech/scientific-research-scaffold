@@ -25,6 +25,14 @@ not break any of them, so adoption is **additive first, moves later**.
 6. Add a `LICENSE` if there is none, once the licence is decided.
 7. Run the repo's own gate. It must pass exactly as it did before.
 
+### A tool
+
+For a repo that does a job for other repos rather than asking a question, the manifest is `TOOL.toml`
+(PROTOCOL.md § 7). Adopting it usually means **moving research out**: measurements, validation write-ups,
+`EXPERIMENTS.md` and `experiments/` go to the study that made them, which records them against the tool
+release it used. Then make the version agree across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and
+`CHANGELOG.md`, and list each repo that depends on the tool under `[[consumers]]` with what it `uses`.
+
 ## 2. Earlier preregistrations stay frozen
 
 A repo that froze analyses under an earlier system (hash files, freeze scripts, a `PREREGISTRATION.md` at the

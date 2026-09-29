@@ -1,8 +1,9 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # The study protocol
 
-How a piece of research is laid out across repositories: what a **study** is, what a **sim** is, what each
-one contains, what it depends on and how, and how a sim graduates out of a study into its own repo.
+How a piece of research is laid out across repositories: what a **study** is, what a **sim** is, what a
+**tool** is, what each one contains, what it depends on and how, and how a sim graduates out of a study into
+its own repo.
 
 This document is generic. Everything specific to one organisation (which repo holds the research corpus,
 which design system the apps use, which workbench holds shared tools) lives in a **profile**
@@ -30,6 +31,7 @@ library. Nothing in it resolves a path on one person's machine.
 |---|---|---|
 | **study** | one research question and everything used to pursue it | as tags and as `apps/vN-*` folders |
 | **sim** | one simulator, under adaptive preregistration | as `model-vX.Y.Z` tags inside one repo |
+| **tool** | one job done for other repos (an instrument, a recorder, a service, a library); no research | as `vX.Y.Z` tags inside one repo |
 
 A profile fills five **roles** that studies and sims depend on but never contain. There is no default
 profile: `scaffold new` takes `--profile NAME` or `$SCAFFOLD_PROFILE`, and a study's manifest records which
@@ -48,7 +50,7 @@ one it uses from then on.
 renaming later breaks absolute paths and links. The kind is declared in two places instead, and
 `scaffold check` makes sure they agree:
 
-- `kind = "study"` (or `"sim"`) in the manifest, and
+- `kind = "study"` (or `"sim"`, or `"tool"`) in the manifest, and
 - the kind line directly under the README's title: `**Kind:** study · **Stage:** SKETCH`.
 
 An index of which repo is which kind is kept outside the repos (the organisation's site or profile), not
@@ -58,13 +60,13 @@ in their names.
 
 ## 2. The manifest
 
-Every study has `STUDY.toml`; every sim has `SIM.toml`. It is the machine-readable register for the repo.
+Every study has `STUDY.toml`; every sim has `SIM.toml`; every tool has `TOOL.toml` (§ 7). It is the machine-readable register for the repo.
 
 ```toml
 kind = "study"
 name = "reef-acoustics"
 question = "Does the sound of a reef track its coral cover across survey sites?"
-stage = "SKETCH"                 # SKETCH | PROBE | BENCH | SHIPPED (§ 9)
+stage = "SKETCH"                 # SKETCH | PROBE | BENCH | SHIPPED (§ 10)
 visibility = "private"           # public | private: decided, never defaulted
 visibility_decided = "2026-01-15"
 profile = "polarizetech"
@@ -87,6 +89,11 @@ path = "sims/sound-propagation"
 slug = "fish-chorus"
 repo = "your-org/fish-chorus"
 ref = "model-v0.2.0"             # a tag. Never a branch.
+
+[[tools]]                        # a tool this study uses, pinned the same way
+slug = "hydrophone-logger"
+repo = "your-org/hydrophone-logger"
+ref = "v1.2.0"
 ```
 
 **Visibility is a person's decision.** `scaffold new` writes `visibility = "undecided"` unless it is given
@@ -111,11 +118,11 @@ working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
   EXPERIMENTS.md       the experiment register
   LICENSE              code MIT; text and figures CC BY 4.0
   CITATION.cff
-  pyproject.toml + uv.lock   every library and external sim pinned to a tag
+  pyproject.toml + uv.lock   every library, tool and external sim pinned to a tag
   Makefile             `make check` runs everything CI runs
   apps/<vN-slug>/      versioned exploratory apps (§ 5)
   sims/<slug>/         simulators still living inside the study (§ 6)
-  experiments/<EID>/   preregistered experiments (§ 7)
+  experiments/<EID>/   preregistered experiments (§ 8)
   data/manifest.json   every dataset by DOI or URL plus sha256; raw data is gitignored and fetched
   shared/workbench.py  the one resolver for workbench tools (§ 4)
   .agents/             the prereg kit's protocols and tools
@@ -131,12 +138,12 @@ testing?" A result from an app is never a finding. A finding comes from a prereg
 
 ## 4. Dependencies
 
-The direction is fixed: a study depends on sims and libraries; sims depend on libraries; nothing depends
-on a study. Nobody imports the corpus.
+The direction is fixed: a study depends on sims, tools and libraries; sims depend on tools and libraries;
+tools depend on other tools and libraries; nothing depends on a study. Nobody imports the corpus.
 
 | depending on | how | never |
 |---|---|---|
-| a library or an external sim | a pinned **tag** in `pyproject.toml` and `uv.lock` | a branch, a sibling folder, an editable install, for anything a result is quoted from |
+| a library, a tool or an external sim | a pinned **tag** in `pyproject.toml` and `uv.lock`, and in the manifest's `[[sims]]` or `[[tools]]` | a branch, a sibling folder, an editable install, for anything a result is quoted from |
 | the corpus | its claim IDs and links, in `RESEARCH.md` | a submodule, a copy, an import |
 | a dataset | DOI or URL plus sha256 in `data/manifest.json` | committed bulk data |
 | a workbench tool | `shared/workbench.py`, for local development only | an absolute path |
@@ -210,7 +217,56 @@ study then deletes the folder and pins the new repo by tag in its manifest and l
 
 ---
 
-## 7. Preregistration
+## 7. Tools
+
+A tool does **one job for other repos** and holds no research: an instrument and its recorder, a data
+service, an importable library. A study asks a question; a tool is something studies use to answer theirs.
+
+```
+<tool>/
+  README.md  CLAUDE.md  AGENTS.md  TOOL.toml  LICENSE  CITATION.cff
+  CHANGELOG.md         every release, and what changed for the repos that depend on it
+  pyproject.toml       when it is a Python package or has Python parts
+  ...                  the tool's own layout: firmware, apps, a package, whatever the job needs
+```
+
+```toml
+kind = "tool"
+name = "hydrophone-logger"
+job = "Records calibrated hydrophone audio to disk, with the gain it used"
+stage = "BENCH"
+visibility = "public"
+visibility_decided = "2026-02-01"
+profile = "polarizetech"
+version = "1.2.0"                # the one version; everything else says the same
+
+[[consumers]]                    # one entry per repo that depends on it
+name = "reef-acoustics"
+repo = "your-org/reef-acoustics"
+uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
+```
+
+- **No research in a tool.** No question, no `[corpus]`, no `RESEARCH.md`, `EXPERIMENTS.md` or
+  `experiments/`. A measurement made with a tool, even a measurement *of* the tool, is a finding of the
+  study that made it, recorded there against the tool release it used.
+- **One version, said the same everywhere.** `version` in `TOOL.toml`, `[project] version` in
+  `pyproject.toml`, `version` in `CITATION.cff`, and a heading in `CHANGELOG.md`. Releases are tagged
+  `vX.Y.Z`.
+- **Consumers say what they use.** Each `[[consumers]]` entry lists the routes, constants, files and
+  formats that repo relies on. A change to any of them is a change for that consumer even when every
+  test in the tool passes, so the release names it under `### Outputs changed` in `CHANGELOG.md`. (That
+  heading is advice; `scaffold check` does not read changelog sections.)
+- **A tool gets the prereg kit's defaults** (so `AGENTS.md` is managed like everywhere else) but not the
+  profile's experiment modules, and nothing requires the `prereg` module in it.
+- **Where a tool starts.** Usually in the profile's workbench, reached through `shared/workbench.py`. It
+  becomes its own repo when a number a study quotes depends on it (§ 4: before it is quoted, the tool it
+  used is released and pinned), or when it is shared on its own. This is advice, not a check.
+
+`scaffold new tool <name> --job "..."` creates one. A tool is always its own repo; there is no `--inside`.
+
+---
+
+## 8. Preregistration
 
 Every experiment, in a study or a sim, follows the prereg kit's protocol:
 
@@ -230,7 +286,7 @@ to protect.
 
 ---
 
-## 8. Research
+## 9. Research
 
 Findings are written to the **corpus**, in the study's project folder there. The study carries only
 `RESEARCH.md`: the corpus project, the claim prefix, and the claim IDs each experiment bears on.
@@ -241,7 +297,7 @@ Findings are written to the **corpus**, in the study's project folder there. The
 
 ---
 
-## 9. Stages
+## 10. Stages
 
 How strict to be scales with what a mistake would cost. Declare the stage in the manifest and the README.
 
@@ -257,21 +313,27 @@ and saying plainly what was not done.
 
 ---
 
-## 10. What `scaffold check` enforces
+## 11. What `scaffold check` enforces
 
-| check | study | sim | sim inside a study |
-|---|---|---|---|
-| manifest parses, and `kind`, `name`, `question`, `stage` are valid | ✓ | ✓ | ✓ |
-| no `lab-`/`sim-`/`study-` style prefix on the name | ✓ | ✓ | ✓ |
-| README kind line matches the manifest | ✓ | ✓ | ✓ |
-| `visibility` is decided (`public` or `private`, not `undecided`), with the date | ✓ | ✓ | |
-| `CLAUDE.md`, `AGENTS.md`, `LICENSE`, `EXPERIMENTS.md` exist | ✓ | ✓ | |
-| prereg kit installed (`.agents/kit_ap.lock` with the `prereg` module) | ✓ | ✓ | |
-| `RESEARCH.md` exists and names a corpus project | ✓ | ✓ | |
-| every app and local sim listed exists; every app has `index.html` | ✓ | | |
-| every external sim is pinned to a tag, not a branch | ✓ | | |
-| the corpus is not a submodule | ✓ | ✓ | |
-| no absolute home-directory paths in tracked text files | warning | warning | warning |
+| check | study | sim | sim inside a study | tool |
+|---|---|---|---|---|
+| manifest parses, and `kind`, `name`, `stage` are valid | ✓ | ✓ | ✓ | ✓ |
+| manifest has a `question` (a tool: a `job`) | ✓ | ✓ | ✓ | ✓ |
+| no `lab-`/`sim-`/`study-` style prefix on the name | ✓ | ✓ | ✓ | ✓ |
+| README kind line matches the manifest | ✓ | ✓ | ✓ | ✓ |
+| `visibility` is decided (`public` or `private`, not `undecided`), with the date | ✓ | ✓ | | ✓ |
+| `CLAUDE.md`, `AGENTS.md`, `LICENSE` exist | ✓ | ✓ | | ✓ |
+| `EXPERIMENTS.md` and `RESEARCH.md` exist | ✓ | ✓ | | |
+| the manifest names a corpus project (`[corpus] project`) | ✓ | warning | | |
+| prereg kit installed (`.agents/kit_ap.lock` with the `prereg` module) | ✓ | ✓ | | |
+| every app and local sim listed exists; every app has `index.html` | ✓ | | | |
+| every external sim is pinned to a tag, not a branch | ✓ | | | |
+| every `[[tools]]` entry has a repo and is pinned to a tag, not a branch | ✓ | ✓ | | |
+| holds no research: no `question`, `[corpus]`, `RESEARCH.md`, `EXPERIMENTS.md`, `experiments/` | | | | ✓ |
+| `CHANGELOG.md` and `CITATION.cff` exist; one `X.Y.Z` version across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and a `CHANGELOG.md` heading | | | | ✓ |
+| every consumer has a `name`, a `repo` and a non-empty `uses` | | | | ✓ |
+| the corpus is not a submodule | ✓ | ✓ | | ✓ |
+| no absolute home-directory paths in tracked text files | warning | warning | warning | warning |
 
 It exits nonzero on any failure, so it can gate CI. Warnings are printed and do not fail.
 

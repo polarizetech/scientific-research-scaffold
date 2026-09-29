@@ -4,6 +4,7 @@
 
   scaffold new study <name> --question "..." [--profile NAME] [--visibility public|private] [--dir PARENT]
   scaffold new sim <name> --question "..." [--inside STUDY]
+  scaffold new tool <name> --job "..."
   scaffold new app <slug> --question "..." [--study PATH]
   scaffold promote-sim <study>/sims/<slug>
   scaffold check [PATH]
@@ -28,16 +29,19 @@ HERE = Path(__file__).resolve().parents[1]
 TEMPLATES = HERE / "templates"
 PROFILES = HERE / "profiles"
 
-KINDS = ("study", "sim")
+KINDS = ("study", "sim", "tool")
 STAGES = ("SKETCH", "PROBE", "BENCH", "SHIPPED")
 APP_STATUSES = ("active", "superseded", "abandoned")
 VISIBILITIES = ("public", "private")
+SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
+#: What makes a repo research. A tool holds none of it (PROTOCOL.md § 7).
+RESEARCH_FILES = ("RESEARCH.md", "EXPERIMENTS.md", "experiments")
 UNDECIDED = "undecided"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 #: Kind prefixes the protocol retires (PROTOCOL.md § 1). The kind belongs in the manifest.
 KIND_PREFIXES = ("lab-", "sim-", "study-", "case-", "exp-")
 BRANCH_REFS = ("", "main", "master", "HEAD", "develop", "dev", "trunk")
-KIND_LINE_RE = re.compile(r"\*\*Kind:\*\*\s*(study|sim)\b(?:.*?\*\*Stage:\*\*\s*([A-Z]+))?")
+KIND_LINE_RE = re.compile(r"\*\*Kind:\*\*\s*(study|sim|tool)\b(?:.*?\*\*Stage:\*\*\s*([A-Z]+))?")
 ABS_PATH_RE = re.compile(r"(?<![\w.])(/Users/[A-Za-z0-9_.-]+/|/home/[a-z0-9_.-]+/)")
 #: Tracked files that are records, not instructions: an absolute path in them is history, not a bug.
 ABS_PATH_SKIP = re.compile(r"(\.jsonl$|provenance\.json$|(^|/)conversations/|(^|/)protocol/history/|^\.agents/|\.lock$)")
@@ -62,11 +66,19 @@ def load_toml(path):
 
 def _mini_toml(text, path):
     """The TOML subset manifests and profiles use: tables, arrays of tables, strings, numbers,
-    booleans and flat arrays. Used only where tomllib is unavailable (Python < 3.11)."""
+    booleans and flat arrays, which may span lines. Used only where tomllib is unavailable (Python < 3.11)."""
     root, cur = {}, None
     cur = root
+    pending = None  # (key, parts, first line number) while a multi-line array is open
     for n, raw in enumerate(text.splitlines(), 1):
         line = _strip_comment(raw).strip()
+        if pending:
+            pending[1].append(line)
+            joined = " ".join(pending[1])
+            if _depth(joined) == 0:
+                cur[pending[0]] = _value(joined, path, pending[2])
+                pending = None
+            continue
         if not line:
             continue
         if line.startswith("[["):
@@ -77,10 +89,31 @@ def _mini_toml(text, path):
             cur = _table(root, line.strip("[] "))
         elif "=" in line:
             k, v = line.split("=", 1)
-            cur[k.strip().strip('"')] = _value(v.strip(), path, n)
+            k, v = k.strip().strip('"'), v.strip()
+            if v.startswith("[") and _depth(v) > 0:
+                pending = (k, [v], n)
+            else:
+                cur[k] = _value(v, path, n)
         else:
             raise Fail(f"{path}:{n}: cannot parse {raw!r}")
+    if pending:
+        raise Fail(f"{path}:{pending[2]}: array for {pending[0]!r} is never closed")
     return root
+
+
+def _depth(s):
+    """Open brackets minus closed ones, outside strings."""
+    d, q = 0, None
+    for ch in s:
+        if q:
+            q = None if ch == q else q
+        elif ch in "\"'":
+            q = ch
+        elif ch == "[":
+            d += 1
+        elif ch == "]":
+            d -= 1
+    return d
 
 
 def _table(root, dotted):
@@ -110,11 +143,11 @@ def _strip_comment(s):
 
 def _value(v, path, n):
     if v.startswith(("\"", "'")):
-        return v[1:-1].encode().decode("unicode_escape") if v[0] == '"' else v[1:-1]
+        return json.loads(v) if v[0] == '"' else v[1:-1]  # TOML basic-string escapes are JSON's
     if v in ("true", "false"):
         return v == "true"
     if v.startswith("["):
-        inner = v.strip("[]").strip()
+        inner = v[1:v.rfind("]")].strip()
         return [_value(x.strip(), path, n) for x in _split_array(inner)] if inner else []
     try:
         return float(v) if "." in v else int(v)
@@ -261,8 +294,8 @@ def find_kit_ap(explicit, profile):
     return None
 
 
-def install_kit(dest, profile, kit_ap):
-    extra = profile.get("prereg", {}).get("modules", [])
+def install_kit(dest, profile, kit_ap, extra=None):
+    extra = profile.get("prereg", {}).get("modules", []) if extra is None else extra
     if not kit_ap:
         repo = profile.get("prereg", {}).get("repo", "")
         print(f"  ! prereg kit not installed: kit_ap not found. Run:\n"
@@ -293,11 +326,18 @@ def append_toml(path, block):
 
 def cmd_new(a):
     if a.kind == "app":
+        if not a.question:
+            raise Fail("an app needs --question")
         return new_app(a)
     check_name(a.name)
     inside = Path(a.inside).resolve() if getattr(a, "inside", None) else None
-    if a.kind == "study" and inside:
-        raise Fail("--inside is for sims; a study is always its own repo")
+    if a.kind in ("study", "tool") and inside:
+        raise Fail(f"--inside is for sims; a {a.kind} is always its own repo")
+    if a.kind == "tool":
+        if not a.job or a.question:
+            raise Fail("a tool has a --job (what it does for other repos), not a --question: it holds no research")
+    elif not a.question:
+        raise Fail(f"a {a.kind} needs --question")
     if inside and a.visibility:
         raise Fail("--visibility is for a repo; a sim inside a study shares the study's visibility")
     if inside:
@@ -311,8 +351,9 @@ def cmd_new(a):
         dest = Path(a.dir).resolve() / a.name
     if dest.exists() and any(dest.iterdir()):
         raise Fail(f"{dest} already exists and is not empty")
-    v = template_vars(profile, a.name, a.question, visibility=a.visibility or UNDECIDED,
+    v = template_vars(profile, a.name, a.question or a.job, visibility=a.visibility or UNDECIDED,
                       visibility_decided=_dt.date.today().isoformat() if a.visibility else "")
+    v["job"] = v["question"]
     skip = ()
     if a.kind == "study" and not profile.get("workbench", {}).get("repo"):
         skip = ("shared/workbench.py",)
@@ -334,7 +375,8 @@ def cmd_new(a):
     code, _, err = git("commit", "-q", "-m", f"Scaffold {a.kind} {a.name} (scientific-research-scaffold)", cwd=dest)
     if code:
         print(f"  ! initial commit failed: {err}")
-    install_kit(dest, profile, find_kit_ap(a.kit_ap, profile))
+    # A tool runs no experiments, so it takes the kit's defaults and not the profile's experiment modules.
+    install_kit(dest, profile, find_kit_ap(a.kit_ap, profile), extra=[] if a.kind == "tool" else None)
     org = profile.get("org", "<org>")
     manifest = f"{a.kind.upper()}.toml"
     if a.visibility:
@@ -431,7 +473,7 @@ class Report:
 def check_repo(root, rep, nested=False, profile_override=None):
     root = Path(root).resolve()
     manifests = [k for k in KINDS if (root / f"{k.upper()}.toml").exists()]
-    if not rep.ok(len(manifests) == 1, f"{root.name}: exactly one of STUDY.toml / SIM.toml is required"):
+    if not rep.ok(len(manifests) == 1, f"{root.name}: exactly one of STUDY.toml / SIM.toml / TOOL.toml is required"):
         return
     kind = manifests[0]
     try:
@@ -448,7 +490,10 @@ def check_repo(root, rep, nested=False, profile_override=None):
     except Fail as e:
         rep.ok(False, f"{where}name: {e}")
     rep.ok(name == root.name, f"{where}name {name!r} differs from the folder name {root.name!r}", warn=True)
-    rep.ok(bool(m.get("question")), f"{where}manifest has no question")
+    if kind == "tool":
+        rep.ok(bool(m.get("job")), "TOOL.toml has no job (what the tool does for the repos that use it)")
+    else:
+        rep.ok(bool(m.get("question")), f"{where}manifest has no question")
     rep.ok(m.get("stage") in STAGES, f"{where}stage {m.get('stage')!r} is not one of {', '.join(STAGES)}")
 
     readme = root / "README.md"
@@ -481,17 +526,27 @@ def check_repo(root, rep, nested=False, profile_override=None):
            if vis in (None, "", UNDECIDED) else f"visibility must be 'public' or 'private', not {vis!r}")
     rep.ok(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(m.get("visibility_decided", "")))),
            "visibility_decided must be the date (YYYY-MM-DD) visibility was decided")
-    for f in ("CLAUDE.md", "AGENTS.md", "LICENSE", "EXPERIMENTS.md", "RESEARCH.md"):
+    required = ("CLAUDE.md", "AGENTS.md", "LICENSE") + (
+        ("CHANGELOG.md", "CITATION.cff") if kind == "tool" else ("EXPERIMENTS.md", "RESEARCH.md"))
+    for f in required:
         rep.ok((root / f).exists(), f"{f} is missing")
-    lock = root / ".agents" / "kit_ap.lock"
-    if rep.ok(lock.exists(), "prereg kit not installed (.agents/kit_ap.lock missing): run kit_ap init"):
-        try:
-            mods = json.loads(lock.read_text()).get("modules", [])
-        except ValueError:
-            mods = []
-        rep.ok("prereg" in mods, "kit_ap.lock does not include the prereg module")
-    corpus = m.get("corpus", {}).get("project", "")
-    rep.ok(bool(corpus), "no corpus project named in the manifest ([corpus] project = ...)", warn=(kind == "sim"))
+    if kind == "tool":
+        check_tool(root, m, rep)
+    else:
+        lock = root / ".agents" / "kit_ap.lock"
+        if rep.ok(lock.exists(), "prereg kit not installed (.agents/kit_ap.lock missing): run kit_ap init"):
+            try:
+                mods = json.loads(lock.read_text()).get("modules", [])
+            except ValueError:
+                mods = []
+            rep.ok("prereg" in mods, "kit_ap.lock does not include the prereg module")
+        corpus = m.get("corpus", {}).get("project", "")
+        rep.ok(bool(corpus), "no corpus project named in the manifest ([corpus] project = ...)", warn=(kind == "sim"))
+        for t in m.get("tools", []):
+            ref = str(t.get("ref", ""))
+            rep.ok(bool(t.get("repo")), f"tool {t.get('slug', '?')}: no repo")
+            rep.ok(ref not in BRANCH_REFS and bool(re.search(r"\d", ref)),
+                   f"tool {t.get('slug', '?')}: must be pinned to a tag or commit, not {ref!r}")
     gm = root / ".gitmodules"
     corpus_repo = profile.get("corpus", {}).get("repo", "")
     if gm.exists() and corpus_repo:
@@ -541,6 +596,43 @@ def check_repo(root, rep, nested=False, profile_override=None):
            + (" ..." if len(hits) > 5 else ""), warn=True)
 
 
+def check_tool(root, m, rep):
+    """What makes a tool a tool: no research in it, one version said everywhere, consumers named."""
+    for f in RESEARCH_FILES:
+        rep.ok(not (root / f).exists(),
+               f"{f} is research, and a tool holds none: it belongs to the study or sim that uses the tool")
+    for key in ("question", "corpus"):
+        rep.ok(key not in m, f"TOOL.toml has {key!r}: a tool holds no research, so it has a job, not a question")
+
+    version = str(m.get("version", ""))
+    if rep.ok(bool(SEMVER_RE.match(version)), f"TOOL.toml version {version!r} must be X.Y.Z"):
+        said = {}
+        pyproject = root / "pyproject.toml"
+        if pyproject.exists():
+            # Only [project] version is needed, and a pyproject can use TOML the built-in parser does not cover.
+            pv = re.search(r"^\[project\]\s*$(?:(?!^\[).)*?^version\s*=\s*[\"']([^\"']+)",
+                           pyproject.read_text(encoding="utf-8"), re.M | re.S)
+            if pv:
+                said["pyproject.toml"] = pv.group(1)
+        cff = root / "CITATION.cff"
+        if cff.exists():
+            cv = re.search(r"^version:\s*[\"']?([^\s\"']+)", cff.read_text(encoding="utf-8"), re.M)
+            if cv:
+                said["CITATION.cff"] = cv.group(1)
+        for where, v in said.items():
+            rep.ok(v == version, f"{where} says version {v}, TOOL.toml says {version}")
+        changelog = root / "CHANGELOG.md"
+        if version != "0.0.0" and changelog.exists():
+            heading = re.compile(rf"^#+ .*\bv?{re.escape(version)}\b", re.M)
+            rep.ok(bool(heading.search(changelog.read_text(encoding="utf-8"))),
+                   f"CHANGELOG.md has no heading for version {version}")
+
+    for c in m.get("consumers", []):
+        label = f"consumer {c.get('name', '?')}"
+        rep.ok(bool(c.get("name")) and bool(c.get("repo")), f"{label}: needs a name and a repo")
+        rep.ok(bool(c.get("uses")), f"{label}: list what it relies on under uses, so a change to it is caught")
+
+
 def cmd_check(a):
     root = Path(a.path).resolve()
     rep = Report(root)
@@ -567,9 +659,10 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("new", help="create a study, a sim, or an app inside a study")
-    n.add_argument("kind", choices=("study", "sim", "app"))
+    n.add_argument("kind", choices=("study", "sim", "tool", "app"))
     n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
-    n.add_argument("--question", "-q", required=True, help="the question it asks (or what a sim simulates)")
+    n.add_argument("--question", "-q", help="the question it asks (or what a sim simulates)")
+    n.add_argument("--job", "-j", help="for a tool: what it does for the repos that use it")
     n.add_argument("--profile", help="profile name (default: $SCAFFOLD_PROFILE; there is no built-in default)")
     n.add_argument("--visibility", choices=VISIBILITIES,
                    help="record a visibility decision already made (default: left undecided; check fails until set)")

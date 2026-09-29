@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this tool, please cite it as below."
+title: "{{name}}"
+abstract: "{{job}}"
+type: software
+version: 0.0.0
+authors:
+  - name: "{{author}}"
+license:
+  - MIT
+  - CC-BY-4.0
+repository-code: "https://github.com/{{org}}/{{name}}"
