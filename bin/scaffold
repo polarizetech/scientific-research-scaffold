@@ -203,7 +203,7 @@ def template_vars(profile, name, question, **extra):
         "design_name": repo_basename(ds.get("repo", "")),
         "design_css": ds.get("css", "design.css"),
         "design_js_tag": f'<script type="module" src="design/{ds["js"]}"></script>' if ds.get("js") else "",
-        "scaffold_ref": "v0.1.0",
+        "scaffold_ref": "v0.2.0",
     }
     v.update(extra)
     return v

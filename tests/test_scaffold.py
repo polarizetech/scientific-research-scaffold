@@ -4,6 +4,7 @@ import importlib.machinery
 import importlib.util
 import io
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -158,6 +159,13 @@ class Scaffold(unittest.TestCase):
         code, out = run("check", str(repo))
         self.assertEqual(code, 0)
         self.assertIn("absolute home-directory path", out)
+
+    def test_release_version_agrees(self):
+        ref = scaffold.template_vars({}, "x", "?")["scaffold_ref"]
+        citation = re.search(r"^version: (\S+)$", (ROOT / "CITATION.cff").read_text(), re.M).group(1)
+        changelog = re.search(r"^## (v\S+)", (ROOT / "CHANGELOG.md").read_text(), re.M).group(1)
+        self.assertEqual((ref, changelog), (f"v{citation}", f"v{citation}"),
+                         "scaffold_ref, CITATION.cff and the newest CHANGELOG heading must name the same release")
 
     def test_mini_toml_matches_tomllib(self):
         try:
