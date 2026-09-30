@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 (2026-09-30)
 
 - **The tool kind.** A third kind of repo, for one job done for other repos with no research in it:
   `TOOL.toml` with a `job` in place of a question, a `version`, and `[[consumers]]` naming what each
@@ -24,6 +24,7 @@
 - PROTOCOL.md sections from Preregistration on are renumbered by one (Preregistration is now § 8).
 - The built-in TOML parser (Python < 3.11) reads arrays that span lines, and decodes non-ASCII strings
   correctly; before, `"µV"` came back garbled.
+- Generated CI checks out `v0.3.0`, and `update` moves existing repos' CI to it.
 
 ## v0.2.0 (2026-09-29)
 

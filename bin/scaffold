@@ -35,7 +35,7 @@ PROFILES = HERE / "profiles"
 
 KINDS = ("study", "sim", "tool")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.2.0"
+SCAFFOLD_REF = "v0.3.0"
 LOCK = ".scaffold.lock"
 AGENTS_DIR = HERE / "agents"
 #: The specialist agents each kind gets, from templates/agents/. A sim has no UI, so no UI agents.
