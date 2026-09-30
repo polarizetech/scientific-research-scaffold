@@ -306,6 +306,20 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(run("update", str(repo), "--apply", "--adopt", "Makefile")[0], 0)
         self.assertTrue((repo / "Makefile").exists())
 
+    def test_an_adopted_repo_stays_adopted_across_updates(self):
+        repo = self.study()
+        (repo / scaffold.LOCK).unlink()
+        (repo / "Makefile").unlink()
+        self.committed(repo)
+        self.assertEqual(run("update", str(repo), "--apply", "--adopt", ".claude/agents")[0], 0)
+        self.assertTrue(scaffold.read_lock(repo)["adopted"])
+        self.committed(repo)
+        self.assertEqual(self.plan(repo)["Makefile"], "missing")  # the lock doesn't make it scaffold-made
+        self.assertEqual(run("update", str(repo), "--apply")[0], 0)
+        self.assertFalse((repo / "Makefile").exists())
+        self.assertTrue(scaffold.read_lock(repo)["adopted"])
+        self.assertNotIn("adopted", scaffold.read_lock(self.study("made")))
+
     def test_update_refuses_to_overwrite_uncommitted_work(self):
         repo = self.study()
         ci = self.age(repo)

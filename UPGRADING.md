@@ -16,6 +16,15 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## Unreleased
+
+**`scaffold update` does:** keeps `"adopted": true` in the lock of a repo that adopted the scaffold.
+
+**The session does:**
+- **A repo that adopted the scaffold before this release** (its manifest was added by hand, not by
+  `scaffold new`) has a lock without the flag. Add `"adopted": true` to its `.scaffold.lock`, so that `update`
+  never adds the scaffold's CI or `Makefile` to it unasked.
+
 ## v0.5.0
 
 **`scaffold update` does:** moves the CI ref to `v0.5.0`; otherwise nothing new, since this release

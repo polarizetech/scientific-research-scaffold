@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Adopted repos stay adopted.** `.scaffold.lock` records `"adopted": true` for a repo that took up the scaffold
+  rather than being made by it, and `update` never adds a missing file to such a repo unasked. Before, a lock
+  written by an adopting `update` made the next `update` treat the repo as scaffold-made and add its CI and
+  `Makefile`.
+
 ## v0.5.0 (2026-09-30)
 
 - Needs adaptive-preregistration v0.5.0 or later, whose `tool-scope` applies to tool repositories.

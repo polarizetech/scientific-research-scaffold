@@ -450,12 +450,15 @@ def owned_files(kind, profile):
     return [f for f in OWNED[kind] if f != "shared/workbench.py" or profile.get("workbench", {}).get("repo")]
 
 
-def write_lock(root, kind, profile, only=None):
-    """Record what the scaffold wrote, so `update` can tell a file nobody touched from one somebody edited."""
+def write_lock(root, kind, profile, only=None, adopted=False):
+    """Record what the scaffold wrote, so `update` can tell a file nobody touched from one somebody edited.
+
+    `adopted` marks a repo that took up the scaffold rather than being made by it: `update` never adds a
+    missing file to it unasked, however many times it runs."""
     files = {f: sha256((root / f).read_text(encoding="utf-8"))
              for f in owned_files(kind, profile) if (root / f).exists() and (only is None or f in only)}
-    (root / LOCK).write_text(json.dumps({"scaffold": SCAFFOLD_REF, "files": files}, indent=2) + "\n",
-                             encoding="utf-8")
+    lock = {"scaffold": SCAFFOLD_REF, **({"adopted": True} if adopted else {}), "files": files}
+    (root / LOCK).write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
 
 
 def write_licence(dest, profile):
@@ -1055,15 +1058,16 @@ def plan_update(root, adopt=()):
     v = manifest_vars(kind, m, profile)
     lock = read_lock(root)
     recorded = lock.get("files", {})
+    made = bool(lock) and not lock.get("adopted")  # made by the scaffold, so a missing file is its to add
     plan = []
     for rel in owned_files(kind, profile):
         new = render_owned(kind, rel, v, profile)
         path = root / rel
         if not path.exists():
-            if lock or adopted(rel, adopt):
+            if made or adopted(rel, adopt):
                 plan.append((rel, "add", "", new, ""))
             else:
-                plan.append((rel, "missing", "", new, "this repo was not made by the scaffold; --adopt to add"))
+                plan.append((rel, "missing", "", new, "this repo adopted the scaffold; --adopt to add"))
             continue
         cur = path.read_text(encoding="utf-8")
         if cur == new:
@@ -1086,7 +1090,7 @@ def plan_update(root, adopt=()):
     new = with_block(cur, agents_block(kind, v, profile))
     if cur == new:
         plan.append(("AGENTS.md", "current", cur, new, ""))
-    elif BLOCK_START in cur or lock or adopted("AGENTS.md", adopt):
+    elif BLOCK_START in cur or made or adopted("AGENTS.md", adopt):
         plan.append(("AGENTS.md", "update" if BLOCK_START in cur else "add", cur, new, "only the scaffold's section"))
     else:
         plan.append(("AGENTS.md", "missing", cur, new, "no scaffold section; --adopt AGENTS.md to add one"))
@@ -1100,7 +1104,7 @@ def plan_update(root, adopt=()):
     rel = str(SETTINGS)
     if cur and json.loads(cur) == json.loads(new):
         plan.append((rel, "current", cur, cur, ""))
-    elif HOOK_MARK in cur or lock or adopted(rel, adopt):
+    elif HOOK_MARK in cur or made or adopted(rel, adopt):
         plan.append((rel, "update" if HOOK_MARK in cur else "add", cur, new, "only the scaffold's session hook"))
     else:
         plan.append((rel, "missing", cur, new, "no scaffold session hook; --adopt .claude/settings.json to add it"))
@@ -1150,7 +1154,8 @@ def cmd_update(a):
         (root / rel).write_text(new, encoding="utf-8")
     # Record only the files that are now exactly the scaffold's: an edited or pinned file is the repo's own.
     ours = {rel for rel, action, *_ in plan if action in ("add", "update", "current")}
-    write_lock(root, kind, profile, only=ours)
+    prior = read_lock(root)
+    write_lock(root, kind, profile, only=ours, adopted=not prior or bool(prior.get("adopted")))
     print(f"wrote {len(writes)} file(s) and {LOCK}. Review with `git diff`, run `scaffold check`, then commit.")
     return 0
 
