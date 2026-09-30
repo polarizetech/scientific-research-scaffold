@@ -56,6 +56,7 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 | `scaffold check [PATH]` | check a repo against the protocol; nonzero exit on failure, for CI |
 | `scaffold status [PATH ...]` | one line per repo: kind, stage, scaffold release, CI ref, check result, pending update |
 | `scaffold update [PATH] [--apply] [--adopt FILE]` | bring the files the scaffold owns up to this release; a dry run unless `--apply` |
+| `scaffold version [PATH]` | whether a repo follows the current scaffold, and the steps to upgrade it (sessions run this themselves) |
 | `scaffold usage [PATH ...] [--days N] [--all]` | tokens and API-equivalent cost per repo from Claude Code and Codex logs, and Codex's plan limits |
 | `scaffold profiles` | list profiles |
 
@@ -82,6 +83,9 @@ wrote it, which it knows from `.scaffold.lock`, or by matching the file against 
 release would have written. An edited CI workflow gets only its scaffold `ref:` moved. Any other
 edited file is kept, with the difference shown; `--adopt FILE` replaces it anyway. It prints a dry
 run first, writes nothing without `--apply`, refuses to overwrite uncommitted work, and never commits.
+
+Every release says how to upgrade to it in [`UPGRADING.md`](UPGRADING.md), and every repo notices: a session hook
+runs `scaffold version` when a session starts and, if the repo is behind, prints the steps and offers to do them.
 
 Requirements: Python 3.9+ and git. No other dependencies.
 

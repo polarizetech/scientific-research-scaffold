@@ -466,6 +466,19 @@ uncommitted for review. `scaffold status` gives one line per repo, so a whole or
 surveyed at once. Structural changes, such as moving research out of a tool, are never made
 automatically; `check` names them and a person does them.
 
+### New releases reach repos by themselves
+
+The scaffold never goes out and changes other repos. Instead, every release documents how to upgrade to
+it, and every repo notices:
+
+- **Each release has a section in [`UPGRADING.md`](UPGRADING.md)**: what `scaffold update` does, and what
+  a session does by hand, with the person's go-ahead where a decision is theirs.
+- **Each repo records its release** in `.scaffold.lock`.
+- **Each session checks.** A session hook in `.claude/settings.json` runs `scaffold version` when a Claude
+  Code session starts; the scaffold section of `AGENTS.md` tells Codex and other assistants to run it. When
+  the repo is behind, it prints the upgrade notes in between, and the session offers to do the upgrade. It
+  also says when the local scaffold checkout is behind the latest release on GitHub.
+
 ---
 
 ## Where this comes from

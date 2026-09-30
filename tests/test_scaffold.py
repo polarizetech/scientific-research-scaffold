@@ -555,6 +555,63 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("preregistrations is research", out)
 
+    # -------------------------------------------------------------------------------- versions
+
+    def test_every_release_has_upgrade_notes(self):
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        upgrading = (ROOT / "UPGRADING.md").read_text()
+        for v in re.findall(r"^## (v\d+\.\d+\.\d+)", changelog, re.M):
+            if scaffold.parse_version(v) >= (0, 2, 0):
+                self.assertIn(f"\n## {v}\n", upgrading, f"UPGRADING.md has no section for {v}")
+
+    def test_version_says_when_a_repo_is_behind_and_how_to_upgrade(self):
+        repo = self.study()
+        code, out = run("version", str(repo), "--offline")
+        self.assertEqual(code, 0)
+        self.assertIn(f"follows scaffold {scaffold.SCAFFOLD_REF}, the release this checkout is", out)
+        self.assertEqual(run("version", str(repo), "--offline", "--hook")[1], "")  # quiet when current
+
+        lock = scaffold.read_lock(repo)
+        lock["scaffold"] = "v0.2.0"
+        (repo / scaffold.LOCK).write_text(scaffold.json.dumps(lock))
+        code, out = run("version", str(repo), "--offline", "--hook")
+        self.assertEqual(code, 0)
+        self.assertIn(f"follows scaffold v0.2.0; {scaffold.SCAFFOLD_REF} is available", out)
+        self.assertIn("offer to upgrade", out)
+        self.assertIn("## v0.3.0", out)
+        self.assertNotIn("## v0.2.0", out)  # already there
+        self.assertIn("## v0.3.0", run("update", str(repo))[1])
+
+    def test_version_without_a_lock_or_manifest(self):
+        repo = self.study()
+        (repo / scaffold.LOCK).unlink()
+        self.assertIn("no .scaffold.lock", run("version", str(repo), "--offline")[1])
+        self.assertEqual(run("version", str(self.tmp), "--offline", "--hook"), (0, ""))
+
+    def test_new_repo_gets_the_session_hook_beside_the_kits(self):
+        repo = self.study()
+        settings = scaffold.json.loads((repo / ".claude" / "settings.json").read_text())
+        commands = [h["command"] for g in settings["hooks"]["SessionStart"] for h in g["hooks"]]
+        self.assertEqual(sum(scaffold.HOOK_MARK in c for c in commands), 1)
+        self.assertIn("scaffold version", (repo / "AGENTS.md").read_text())
+
+        kit = {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "kit_ap check --hook"}]}],
+                         "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "prereg-status"}]}]}}
+        merged = scaffold.json.loads(scaffold.with_session_hook(scaffold.with_session_hook(scaffold.json.dumps(kit))))
+        commands = [h["command"] for g in merged["hooks"]["SessionStart"] for h in g["hooks"]]
+        self.assertIn("kit_ap check --hook", commands)
+        self.assertEqual(sum(scaffold.HOOK_MARK in c for c in commands), 1)
+        self.assertEqual(merged["hooks"]["UserPromptSubmit"], kit["hooks"]["UserPromptSubmit"])
+
+    def test_update_adds_the_hook_to_an_adopted_repo_only_when_asked(self):
+        repo = self.study()
+        (repo / scaffold.LOCK).unlink()
+        (repo / ".claude" / "settings.json").write_text('{"hooks": {}}\n')
+        self.committed(repo)
+        self.assertEqual(self.plan(repo)[".claude/settings.json"], "missing")
+        self.assertEqual(run("update", str(repo), "--apply", "--adopt", ".claude/settings.json")[0], 0)
+        self.assertIn(scaffold.HOOK_MARK, (repo / ".claude" / "settings.json").read_text())
+
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):
             self.assertEqual(run("new", "study", bad, "-q", "?", "--dir", str(self.tmp), "--no-git")[0], 1, bad)

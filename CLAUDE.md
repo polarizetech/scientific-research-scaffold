@@ -13,5 +13,8 @@ the templates or the CLI. The polarizetech profile is a worked example, not the 
 - Templates use `{{placeholders}}`; an unknown placeholder is an error, not a blank.
 - `scaffold new` never publishes: it prints the `gh repo create` line and leaves visibility to the person.
 - Don't install the preregistration kit into this repo itself; it is a tool, not a study.
+- A release that changes what repos contain adds its section to `UPGRADING.md`: what `scaffold update` does,
+  and what a session does by hand. `tests/` fails a release without one.
+- The agents are a submodule (`agents/`, scientific-research-agents) pinned to a tag; change them there.
 
 Tests: `python3 -m unittest discover -v tests`

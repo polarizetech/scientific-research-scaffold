@@ -13,6 +13,7 @@
   scaffold status [PATH ...]
   scaffold update [PATH] [--apply] [--adopt FILE]
   scaffold usage [PATH ...] [--days N] [--all]
+  scaffold version [PATH] [--hook] [--offline]
   scaffold profiles
 
 Stdlib only (Python 3.9+). Needs git. `new` installs the preregistration kit when it can find kit_ap
@@ -74,6 +75,15 @@ ROLE_SUMMARIES = {
     "science-writer": "papers and blog posts",
 }
 BLOCK_START, BLOCK_END = "<!-- scaffold:start -->", "<!-- scaffold:end -->"
+#: The session hook every repo gets: at the start of a Claude Code session, it says whether a newer scaffold
+#: exists (UPGRADING.md). Found through $SCAFFOLD_BIN, a `scaffold` on PATH, or a sibling checkout.
+SETTINGS = Path(".claude") / "settings.json"
+HOOK_MARK = "version --hook"
+HOOK_CMD = ('S="${SCAFFOLD_BIN:-$(command -v scaffold || echo "$CLAUDE_PROJECT_DIR/../scientific-research-scaffold/bin/scaffold")}"; '
+            '[ -f "$S" ] && python3 "$S" version --hook "$CLAUDE_PROJECT_DIR" || true')
+SESSION_NOTE = ("- **Scaffold version.** At the start of a session, run `scaffold version .` (or "
+                "`../scientific-research-scaffold/bin/scaffold version .`). If it reports a newer release, tell the "
+                "person and offer to upgrade, following the steps it prints (Claude Code runs this by itself).")
 #: Files the scaffold owns in a repo it made, which `update` may replace. Everything else belongs to the
 #: repo. A sim inside a study owns none: it shares the study's.
 OWNED = {
@@ -371,7 +381,7 @@ def agents_block(kind, variables, profile):
         "codex_routing": f"{models}. Reasoning effort low for finding and summarising, medium by default, high "
                          f"or xhigh when escalating.",
     }, "AGENTS.block.md")
-    return f"{BLOCK_START}\n{body.rstrip()}\n{BLOCK_END}\n"
+    return f"{BLOCK_START}\n{body.rstrip()}\n{SESSION_NOTE}\n{BLOCK_END}\n"
 
 
 def with_block(text, block):
@@ -380,6 +390,27 @@ def with_block(text, block):
         head, rest = text.split(BLOCK_START, 1)
         return head + block.rstrip("\n") + rest.split(BLOCK_END, 1)[1]
     return (text.rstrip("\n") + "\n\n" if text.strip() else "") + block
+
+
+def with_session_hook(text):
+    """.claude/settings.json text with the scaffold's session hook, replacing an older one of its own and
+    leaving every other hook (the prereg kit's among them) as it is."""
+    cur = json.loads(text) if text.strip() else {}
+    hooks = cur.setdefault("hooks", {})
+    groups = []
+    for group in hooks.get("SessionStart", []):
+        kept = [h for h in group.get("hooks", []) if HOOK_MARK not in h.get("command", "")]
+        if kept:
+            groups.append({**group, "hooks": kept})
+    groups.append({"hooks": [{"type": "command", "command": HOOK_CMD, "timeout": 10}]})
+    hooks["SessionStart"] = groups
+    return json.dumps(cur, indent=2) + "\n"
+
+
+def write_session_hook(dest):
+    path = dest / SETTINGS
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(with_session_hook(path.read_text(encoding="utf-8") if path.exists() else ""), encoding="utf-8")
 
 
 def write_agents_block(dest, kind, variables, profile):
@@ -538,6 +569,7 @@ def cmd_new(a):
     write_lock(dest, a.kind, profile)
     if a.no_git:
         write_agents_block(dest, a.kind, v, profile)
+        write_session_hook(dest)
         return
     git("init", "-q", "-b", "main", cwd=dest)
     git("add", "-A", cwd=dest)
@@ -547,8 +579,9 @@ def cmd_new(a):
     # A tool preregisters nothing, so it takes the kit's defaults and not the profile's preregistration modules.
     install_kit(dest, profile, find_kit_ap(a.kit_ap, profile), extra=[] if a.kind == "tool" else None)
     write_agents_block(dest, a.kind, v, profile)
-    git("add", "AGENTS.md", cwd=dest)
-    git("commit", "-q", "-m", "Add the agents section to AGENTS.md (scientific-research-scaffold)", cwd=dest)
+    write_session_hook(dest)
+    git("add", "AGENTS.md", str(SETTINGS), cwd=dest)
+    git("commit", "-q", "-m", "Add the agents section and the scaffold session hook (scientific-research-scaffold)", cwd=dest)
     org = profile.get("org", "<org>")
     manifest = f"{a.kind.upper()}.toml"
     if a.visibility:
@@ -1048,6 +1081,20 @@ def plan_update(root, adopt=()):
         plan.append(("AGENTS.md", "update" if BLOCK_START in cur else "add", cur, new, "only the scaffold's section"))
     else:
         plan.append(("AGENTS.md", "missing", cur, new, "no scaffold section; --adopt AGENTS.md to add one"))
+    settings = root / SETTINGS
+    cur = settings.read_text(encoding="utf-8") if settings.exists() else ""
+    try:
+        new = with_session_hook(cur)
+    except ValueError:
+        plan.append((str(SETTINGS), "edited", cur, cur, "not valid JSON; kept"))
+        return kind, profile, plan
+    rel = str(SETTINGS)
+    if cur and json.loads(cur) == json.loads(new):
+        plan.append((rel, "current", cur, cur, ""))
+    elif HOOK_MARK in cur or lock or adopted(rel, adopt):
+        plan.append((rel, "update" if HOOK_MARK in cur else "add", cur, new, "only the scaffold's session hook"))
+    else:
+        plan.append((rel, "missing", cur, new, "no scaffold session hook; --adopt .claude/settings.json to add it"))
     return kind, profile, plan
 
 
@@ -1067,11 +1114,18 @@ def cmd_update(a):
     if unknown:
         raise Fail(f"--adopt names files the scaffold does not own here: {', '.join(sorted(unknown))}")
     print(f"{root.name} ({kind}), to scaffold {SCAFFOLD_REF}:")
+    have = parse_version(read_lock(root).get("scaffold"))
+    notes = upgrade_notes(have, parse_version(SCAFFOLD_REF)) if have else []
     for rel, action, cur, new, note in plan:
         print(f"  {action:8} {rel}" + (f"  ({note})" if note else ""))
         if action not in ("current", "missing"):
             show_diff(rel, cur, new)
     writes = [(rel, new) for rel, action, _, new, _ in plan if action in ("add", "update", "pin")]
+    if notes:
+        print("\nThen, by hand or by a session with the person's go-ahead (UPGRADING.md):")
+        for note in notes:
+            print("\n" + note)
+        print()
     if not a.apply:
         print("dry run: nothing written." + (" Run with --apply to write the changes above." if writes else ""))
         return 0
@@ -1148,6 +1202,70 @@ def cmd_usage(a):
     return subprocess.run([sys.executable, str(tool), "usage", *args]).returncode
 
 
+# ------------------------------------------------------------------------------------ version
+
+def parse_version(v):
+    m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", str(v or "").strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def upgrade_notes(since, upto):
+    """The UPGRADING.md sections for releases after `since`, up to and including `upto`, oldest first."""
+    text = (HERE / "UPGRADING.md").read_text(encoding="utf-8")
+    parts = re.split(r"^## ", text, flags=re.M)[1:]
+    notes = []
+    for part in parts:
+        head, _, body = part.partition("\n")
+        v = parse_version(head.split()[0])
+        if v and (since is None or v > since) and v <= upto:
+            notes.append((v, f"## {head}\n{body.strip()}"))
+    return [n for _, n in sorted(notes)]
+
+
+def latest_release(timeout=4):
+    """The newest vX.Y.Z tag of this scaffold's origin, or None when it can't be reached quickly."""
+    try:
+        r = subprocess.run(["git", "ls-remote", "--tags", "origin"], cwd=HERE, capture_output=True, text=True,
+                           timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    tags = [parse_version(line.rsplit("/", 1)[-1].replace("^{}", "")) for line in r.stdout.splitlines()]
+    return max((t for t in tags if t), default=None)
+
+
+def cmd_version(a):
+    root = Path(a.path).resolve()
+    try:
+        kind, _ = read_manifest(root)
+    except Exception:  # noqa: BLE001 - a session hook must never fail the session
+        kind = None
+    if kind is None:
+        if not a.hook:
+            print(f"{root.name}: not a repo made with scientific-research-scaffold (no single manifest)")
+        return 0
+    say = print if not a.hook else (lambda m: print(f"scientific-research-scaffold: {m}"))
+    have, current = read_lock(root).get("scaffold"), parse_version(SCAFFOLD_REF)
+    remote = None if a.offline else latest_release()
+    fmt = "v{}.{}.{}".format
+    if remote and remote > current:
+        say(f"release {fmt(*remote)} is out, but the scaffold checkout at {HERE} is {SCAFFOLD_REF}. Pull it "
+            f"(`git -C {HERE} pull --recurse-submodules`), then run `scaffold version` again.")
+    if not have:
+        say(f"{root.name} has no .scaffold.lock, so the scaffold release it follows is unknown. Run `scaffold update` "
+            f"(a dry run) to see what {SCAFFOLD_REF} would change; `--apply` records the release.")
+        return 0
+    if parse_version(have) and parse_version(have) < current:
+        say(f"{root.name} follows scaffold {have}; {SCAFFOLD_REF} is available. "
+            + ("Tell the person, and offer to upgrade by following these steps. " if a.hook else "")
+            + "To upgrade: `scaffold update` (a dry run), `scaffold update --apply`, then the session steps below, "
+              "oldest first, then `scaffold check`.")
+        for note in upgrade_notes(parse_version(have), current):
+            print("\n" + note)
+    elif not a.hook:
+        print(f"{root.name} follows scaffold {have}, the release this checkout is ({SCAFFOLD_REF}).")
+    return 0
+
+
 # --------------------------------------------------------------------------------------- main
 
 def main(argv=None):
@@ -1194,6 +1312,12 @@ def main(argv=None):
     us.add_argument("--days", type=int, default=7, help="how far back to look (default 7)")
     us.add_argument("--all", action="store_true", help="every project that has sessions, not just PATHs")
     us.set_defaults(fn=cmd_usage)
+
+    ve = sub.add_parser("version", help="whether a repo follows the current scaffold, and how to upgrade it")
+    ve.add_argument("path", nargs="?", default=".")
+    ve.add_argument("--hook", action="store_true", help="for a session hook: quiet when up to date, never fails")
+    ve.add_argument("--offline", action="store_true", help="don't check GitHub for a newer release")
+    ve.set_defaults(fn=cmd_version)
 
     sub.add_parser("profiles", help="list profiles").set_defaults(fn=cmd_profiles)
 

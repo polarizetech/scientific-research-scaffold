@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Repos notice new releases.** `UPGRADING.md` says, per release, what `scaffold update` does and what a
+  session does by hand. `scaffold version` compares a repo's recorded release with the current one (and with
+  GitHub's latest) and prints the steps in between; a session hook in `.claude/settings.json` runs it when a
+  Claude Code session starts, beside the kit's hooks, and the `AGENTS.md` section tells Codex to. `update` adds
+  the hook, and prints the upgrade notes with its plan.
 - **Work types replace `experiments/`.** A study is built from apps, sims, datasets, calculators and tools
   (PROTOCOL.md § 5), each with its own folder, entry requirement and way of writing back to research.
   `scaffold new dataset` creates `datasets/<slug>/` (a dataset-fetch reference pinned to a version, selection
