@@ -12,6 +12,7 @@ projects_dir = "projects"                    # a study's findings go in <repo>/<
 [prereg]                                     # the preregistration kit, installed with `kit_ap init`
 repo = "polarizetech/adaptive-preregistration"
 modules = ["experiment-pr-log"]              # added after init's defaults (core, prereg, convo-log)
+tool_modules = ["tool-scope"]                # for a tool repo instead: scope it with the person before building science
 
 [design]                                     # the design system every app serves; leave repo empty for none
 repo = ""

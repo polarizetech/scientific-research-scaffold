@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Tools are scoped.** `new tool` installs the profile's `[prereg] tool_modules` (`tool-scope`) in place of its
+  preregistration modules, so a tool's claim, features and every scientific feature's evidence and decision are
+  settled with the person first (`SCOPE.toml` at the root; kit `tool-scope` now applies to tool repositories).
+  `check` warns while a scoped tool has no `SCOPE.toml`.
+
 ## v0.4.0 (2026-09-30)
 
 - Generated CI checks out `v0.4.0`; `update` moves existing repos' CI to it, and `UPGRADING.md` says what else to do.

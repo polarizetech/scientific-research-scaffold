@@ -293,8 +293,11 @@ uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
   formats that repo relies on. A change to any of them is a change for that consumer even when every
   test in the tool passes, so the release names it under `### Outputs changed` in `CHANGELOG.md`. (That
   heading is advice; `scaffold check` does not read changelog sections.)
-- **A tool gets the prereg kit's defaults** (so `AGENTS.md` is managed like everywhere else) but not the
-  profile's experiment modules, and nothing requires the `prereg` module in it.
+- **A tool is scoped before anything scientific is built in it.** It gets the prereg kit's defaults and the
+  profile's tool modules instead of its preregistration modules: `tool-scope`, which settles the tool's claim
+  with the person first, then its features, then an evidence basis and the person's recorded decision for each
+  scientific feature, in `SCOPE.toml` at the root. Infrastructure is the agent's to decide. `check` warns while
+  a scoped tool has no `SCOPE.toml`.
 - **Where a tool starts.** Usually in the profile's workbench, reached through `shared/workbench.py`. It
   becomes its own repo when a number a study quotes depends on it (§ 4: before it is quoted, the tool it
   used is released and pinned), or when it is shared on its own. This is advice, not a check.

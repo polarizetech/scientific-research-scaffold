@@ -576,8 +576,10 @@ def cmd_new(a):
     code, _, err = git("commit", "-q", "-m", f"Scaffold {a.kind} {a.name} (scientific-research-scaffold)", cwd=dest)
     if code:
         print(f"  ! initial commit failed: {err}")
-    # A tool preregisters nothing, so it takes the kit's defaults and not the profile's preregistration modules.
-    install_kit(dest, profile, find_kit_ap(a.kit_ap, profile), extra=[] if a.kind == "tool" else None)
+    # A tool preregisters nothing: it takes the profile's tool modules (tool-scope: scope the tool with the person
+    # before building anything scientific) instead of its preregistration modules.
+    tool_modules = profile.get("prereg", {}).get("tool_modules", [])
+    install_kit(dest, profile, find_kit_ap(a.kit_ap, profile), extra=tool_modules if a.kind == "tool" else None)
     write_agents_block(dest, a.kind, v, profile)
     write_session_hook(dest)
     git("add", "AGENTS.md", str(SETTINGS), cwd=dest)
@@ -872,6 +874,13 @@ def check_calculator(root, c, stage, rep):
 
 def check_tool(root, m, rep):
     """What makes a tool a tool: no research in it, one version said everywhere, consumers named."""
+    try:
+        mods = json.loads((root / ".agents" / "kit_ap.lock").read_text()).get("modules", [])
+    except (OSError, ValueError):
+        mods = []
+    if "tool-scope" in mods:
+        rep.ok((root / "SCOPE.toml").exists(), "unscoped: no SCOPE.toml yet; scope the tool with the person before "
+               "building anything scientific (.agents/protocols/SCOPE_PROTOCOL.md)", warn=True)
     for f in RESEARCH_FILES:
         rep.ok(not (root / f).exists(),
                f"{f} is research, and a tool holds none: it belongs to the study or sim that uses the tool")

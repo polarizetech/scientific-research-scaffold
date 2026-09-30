@@ -153,6 +153,16 @@ class Scaffold(unittest.TestCase):
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
 
+    def test_scoped_tool_warns_until_it_has_a_scope_record(self):
+        repo = self.tool()
+        (repo / ".agents").mkdir(exist_ok=True)
+        (repo / ".agents" / "kit_ap.lock").write_text('{"modules": ["core", "prereg", "tool-scope"]}')
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("unscoped: no SCOPE.toml yet", out)
+        (repo / "SCOPE.toml").write_text("format = 1\n")
+        self.assertNotIn("unscoped", run("check", str(repo))[1])
+
     def test_tool_takes_a_job_not_a_question(self):
         for args in (["-q", "Does it?"], ["-q", "Does it?", "-j", "Records"], []):
             code, out = run("new", "tool", "gauge", *args, "--dir", str(self.tmp), "--profile", "example",
