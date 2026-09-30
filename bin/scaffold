@@ -798,7 +798,7 @@ def check_repo(root, rep, nested=False, profile_override=None):
                        f"{d.relative_to(root)} is not registered in STUDY.toml under [[{folder}]]", warn=True)
         rep.ok(not (root / "experiments").is_dir(),
                "experiments/ is the old layout: preregistrations now live in the unit they test "
-               "(<unit>/preregistrations/<EID>/); list an existing folder's path in STUDY.toml until it moves", warn=True)
+               "(<unit>/preregistrations/<EID>/); existing ones stay, listed in EXPERIMENTS.md (UPGRADING.md)", warn=True)
         rep.ok(not (root / "data" / "manifest.json").exists(),
                "data/manifest.json is the old layout: each dataset now has datasets/<slug>/DATASET.toml", warn=True)
         for s in m.get("sims", []):
@@ -1171,7 +1171,7 @@ def cmd_status(a):
             for rel, action, *_ in plan:
                 if action not in ("add", "update", "pin", "missing"):
                     continue
-                if rel.startswith(".claude/"):  # one entry for the agent files, not seven
+                if rel.startswith(".claude/") and rel != str(SETTINGS):  # one entry for the agent files
                     agents[action] = agents.get(action, 0) + 1
                 else:
                     todo.append(f"{action} {rel}")
