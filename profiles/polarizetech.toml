@@ -36,3 +36,8 @@ conventions = [
   "TypeScript: strict mode. React UIs use shadcn/ui components from the design system.",
   "Minimal and readable: the smallest change that works, no speculative abstraction, code a reviewer can follow in one pass.",
 ]
+
+[agents.routing]                             # starting model per agent; defaults in agents/README.md
+
+[agents.codex]
+default_model = "gpt-5.6-sol"

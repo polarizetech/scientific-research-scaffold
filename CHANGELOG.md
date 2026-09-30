@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **Agent coordination.** [`agents/COORDINATION.md`](agents/COORDINATION.md): one lead delegates, agents pass
+  150-word handoffs instead of transcripts, parallel work only for independent tasks (at most three, each in
+  its own worktree), agent teams only for tight back-and-forth, and the science gate never skipped.
+- **Mathematician agent.** Equations, constants, units and valid ranges; records each piece of maths with its
+  source (BioNumbers style) and specifies calculators with reference values, handing code to the engineer.
+- **Model routing.** Each agent's frontmatter now sets its starting `model` and `effort` (a new `scout` on
+  Haiku; the others on Sonnet), overridable in a profile's `[agents.routing]`; the lead escalates a task on a
+  clear signal.
+- **Codex.** A marked scaffold section in `AGENTS.md` gives every assistant the roles, the coordination rules
+  and Codex routing from the profile's `[agents.codex]`. `update` maintains it and leaves the rest of the file
+  alone.
+- **`scaffold usage`.** Tokens and API-equivalent cost per repo and model from Claude Code's and Codex's local
+  logs, a monthly projection, and Codex's plan rate-limit windows. Prices are in `agents/prices.toml`. Each
+  response is counted once: Claude Code writes one response as several transcript lines.
+
 ## v0.3.0 (2026-09-30)
 
 - **The tool kind.** A third kind of repo, for one job done for other repos with no research in it:

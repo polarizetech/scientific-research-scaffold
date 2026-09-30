@@ -347,7 +347,8 @@ This section is advice about the tool, not rules `check` enforces.
 
 A repo the scaffold made records what it wrote in `.scaffold.lock`: the release, and a hash of each
 file the scaffold **owns**. Those are the CI workflow, the `Makefile`, in a study `shared/workbench.py`, and the
-agents in `.claude/agents/` with `.claude/disciplines.md` ([`agents/README.md`](agents/README.md)).
+agents in `.claude/agents/` with `.claude/disciplines.md`, and the marked scaffold section of `AGENTS.md`
+([`agents/README.md`](agents/README.md)).
 Everything else belongs to the repo from the moment it is created.
 
 `scaffold update` moves the owned files to the current release:

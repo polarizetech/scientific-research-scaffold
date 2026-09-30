@@ -33,7 +33,14 @@ def fake_kit(repo):
     """Stand in for `kit_ap init`: the tests exercise this scaffold, not the kit."""
     (repo / ".agents").mkdir(exist_ok=True)
     (repo / ".agents" / "kit_ap.lock").write_text('{"modules": ["core", "prereg"]}')
-    (repo / "AGENTS.md").write_text("<!-- kit_ap:start -->\n<!-- kit_ap:end -->\n")
+    add_kit_block(repo)
+
+
+def add_kit_block(repo):
+    """The kit adds its own marked section to AGENTS.md and leaves the rest of the file alone."""
+    path = repo / "AGENTS.md"
+    old = path.read_text() if path.exists() else ""
+    path.write_text("<!-- kit_ap:start -->\n<!-- kit_ap:end -->\n\n" + old)
 
 
 class Scaffold(unittest.TestCase):
@@ -132,7 +139,7 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(code, 0, out)
         repo = self.tmp / name
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-        (repo / "AGENTS.md").write_text("<!-- kit_ap:start -->\n<!-- kit_ap:end -->\n")
+        add_kit_block(repo)
         return repo
 
     def test_new_tool_passes_check(self):
@@ -406,6 +413,121 @@ class Scaffold(unittest.TestCase):
                          sorted(scaffold.AGENTS["study"]))
         self.assertFalse((repo / ".claude" / "disciplines.md").exists())
 
+    # ---------------------------------------------------------------------- routing, AGENTS.md
+
+    def test_agents_start_on_their_routed_model(self):
+        repo = self.study("routed", profile="example")
+        agents = repo / ".claude" / "agents"
+        for name, (model, effort) in scaffold.ROUTING.items():
+            fields, _ = self.frontmatter(agents / f"{name}.md")
+            self.assertEqual((fields["model"], fields["effort"]), (model, effort), name)
+        self.assertEqual(self.frontmatter(agents / "scout.md")[0]["tools"], "Read, Grep, Glob")
+
+    def test_profile_overrides_routing(self):
+        profile = {"agents": {"routing": {"analyst": "opus:xhigh", "designer": "haiku"}}}
+        v = scaffold.agent_vars({}, ".claude/agents/analyst.md", profile)
+        self.assertEqual((v["model"], v["effort"]), ("opus", "xhigh"))
+        v = scaffold.agent_vars({}, ".claude/agents/designer.md", profile)
+        self.assertEqual((v["model"], v["effort"]), ("haiku", "medium"))
+        self.assertNotIn("model", scaffold.agent_vars({}, "Makefile", profile))
+
+    def test_agents_md_gets_the_scaffold_section_for_every_assistant(self):
+        repo = self.study("roles", profile="polarizetech")
+        text = (repo / "AGENTS.md").read_text()
+        self.assertIn("<!-- kit_ap:start -->", text)
+        self.assertEqual(text.count(scaffold.BLOCK_START), 1)
+        for agent in scaffold.AGENTS["study"]:
+            self.assertIn(f"`.claude/agents/{agent}.md`", text)
+        self.assertIn("gpt-5.6-sol", text)
+        self.assertNotIn("{{", text)
+
+    def test_update_refreshes_only_the_scaffold_section(self):
+        repo = self.study()
+        agents_md = repo / "AGENTS.md"
+        head, rest = agents_md.read_text().split(scaffold.BLOCK_START)
+        stale = head + scaffold.BLOCK_START + "\nold roles\n" + scaffold.BLOCK_END + "\n\nMy own notes.\n"
+        agents_md.write_text(stale)
+        self.committed(repo)
+        self.assertEqual(self.plan(repo)["AGENTS.md"], "update")
+        self.assertEqual(run("update", str(repo), "--apply")[0], 0)
+        text = agents_md.read_text()
+        self.assertNotIn("old roles", text)
+        self.assertIn("My own notes.", text)
+        self.assertIn("<!-- kit_ap:start -->", text)
+        self.assertEqual(self.plan(repo)["AGENTS.md"], "current")
+
+    def test_adopted_repo_gets_the_section_only_when_asked(self):
+        repo = self.study()
+        (repo / scaffold.LOCK).unlink()
+        (repo / "AGENTS.md").write_text("<!-- kit_ap:start -->\n<!-- kit_ap:end -->\n")
+        self.committed(repo)
+        self.assertEqual(self.plan(repo)["AGENTS.md"], "missing")
+        self.assertEqual(run("update", str(repo), "--apply", "--adopt", "AGENTS.md")[0], 0)
+        self.assertIn(scaffold.BLOCK_START, (repo / "AGENTS.md").read_text())
+
+    # ---------------------------------------------------------------------------------- usage
+
+    def logs(self, repo):
+        """Fake Claude Code and Codex logs for `repo`: one Claude response written as three lines (as
+        Claude Code does), one old response, one response elsewhere, and two Codex responses."""
+        claude, codex = self.tmp / "claude", self.tmp / "codex"
+        os.environ["CLAUDE_CONFIG_DIR"], os.environ["CODEX_HOME"] = str(claude), str(codex)
+        self._env.setdefault("CLAUDE_CONFIG_DIR", None)
+        self._env.setdefault("CODEX_HOME", None)
+        now = scaffold._dt.datetime.now(scaffold._dt.timezone.utc)
+        recent, old = (now - scaffold._dt.timedelta(days=1)).isoformat(), (now - scaffold._dt.timedelta(days=30)).isoformat()
+
+        def line(msg_id, ts, cwd, model="claude-opus-5-5", out=1_000_000):
+            return scaffold.json.dumps({"timestamp": ts, "cwd": cwd, "requestId": "r" + msg_id, "message": {
+                "id": msg_id, "model": model, "usage": {
+                    "input_tokens": 0, "output_tokens": out, "cache_read_input_tokens": 1_000_000,
+                    "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 1_000_000}}}})
+        (claude / "projects" / "p").mkdir(parents=True)
+        (claude / "projects" / "p" / "s.jsonl").write_text("\n".join([
+            line("a", recent, str(repo)), line("a", recent, str(repo)), line("a", recent, str(repo)),
+            line("b", old, str(repo)),
+            line("c", recent, str(repo / ".claude" / "worktrees" / "wt"), model="claude-haiku-4-5"),
+            line("d", recent, "/elsewhere"),
+        ]) + "\n")
+        (codex / "sessions" / "2026").mkdir(parents=True)
+        rl = {"primary": {"used_percent": 26.0, "window_minutes": 300}, "secondary": {"used_percent": 65.0, "window_minutes": 10080}}
+        (codex / "sessions" / "2026" / "s.jsonl").write_text("\n".join(scaffold.json.dumps(r) for r in [
+            {"timestamp": recent, "type": "turn_context", "payload": {"cwd": str(repo), "model": "gpt-x"}},
+            {"timestamp": recent, "type": "token_usage_record", "payload": {"response_id": "x1", "usage": {
+                "input_tokens": 1000, "cached_input_tokens": 800, "output_tokens": 50}}},
+            {"timestamp": recent, "type": "token_usage_record", "payload": {"response_id": "x2", "usage": {
+                "input_tokens": 2000, "cached_input_tokens": 1500, "output_tokens": 70}}},
+            {"timestamp": recent, "type": "event_msg", "payload": {"type": "token_count", "rate_limits": rl}},
+        ]) + "\n")
+
+    def test_usage_counts_each_response_once(self):
+        repo = self.study()
+        self.logs(repo)
+        rows = list(scaffold.claude_usage("2000"))
+        self.assertEqual(len(rows), 4)  # a, b, c, d: the three lines of "a" are one response
+        per, total, _ = scaffold.tally(scaffold.claude_usage(
+            (scaffold._dt.datetime.now(scaffold._dt.timezone.utc) - scaffold._dt.timedelta(days=7)).isoformat()),
+            [os.path.realpath(repo)])
+        e = per[os.path.realpath(repo)]
+        self.assertEqual(e["n"], 2)  # "a" and the worktree's "c"; "b" is too old, "d" is elsewhere
+        # a: 1M out at $20 + 1M cache read at $0.20 + 1M 1-hour write at 2 x $4; c: $5 + $0.10 + $2
+        self.assertAlmostEqual(e["cost"], 20 + 0.2 + 8 + 5 + 0.1 + 2)
+        self.assertEqual(total["n"], 3)
+
+    def test_usage_reports_codex_and_its_plan(self):
+        repo = self.study()
+        self.logs(repo)
+        rows, limits = scaffold.codex_usage("2000")
+        rows = list(rows)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(sum(t["cache_read"] for _, _, t in rows), 2300)
+        self.assertEqual(sum(t["input"] for _, _, t in rows), 700)
+        self.assertEqual(limits["secondary"][1], 65.0)
+        code, out = run("usage", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("weekly window (10080 min): 65% used", out)
+        self.assertRegex(out, r"colony\s+2\s")
+
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):
             self.assertEqual(run("new", "study", bad, "-q", "?", "--dir", str(self.tmp), "--no-git")[0], 1, bad)
@@ -472,6 +594,7 @@ class Scaffold(unittest.TestCase):
                             {**scaffold.template_vars({}, "x", "Does it?"), "job": "Does a job",
                              "visibility": "private", "visibility_decided": "2026-01-01"})
         for p in [*sorted((ROOT / "profiles").glob("*.toml")), ROOT / "tests" / "fixtures" / "multiline.toml",
+                  ROOT / "agents" / "prices.toml",
                   *sorted(rendered.glob("*/*.toml"))]:
             text = p.read_text(encoding="utf-8")
             self.assertEqual(scaffold._mini_toml(text, p), tomllib.loads(text), p.name)

@@ -31,3 +31,9 @@ docs = "CC-BY-4.0"
 [agents]                                     # the specialist agents every repo gets (.claude/agents/)
 disciplines = []                             # briefs from agents/disciplines/, by file name
 conventions = []                             # house rules for code, one per line; empty means follow each repo's own config
+
+[agents.routing]                             # override an agent's starting model: analyst = "opus:high"
+
+[agents.codex]                               # models Codex should use; empty means its configured default
+default_model = ""
+escalation_model = ""

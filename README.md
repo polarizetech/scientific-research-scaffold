@@ -56,14 +56,17 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 | `scaffold check [PATH]` | check a repo against the protocol; nonzero exit on failure, for CI |
 | `scaffold status [PATH ...]` | one line per repo: kind, stage, scaffold release, CI ref, check result, pending update |
 | `scaffold update [PATH] [--apply] [--adopt FILE]` | bring the files the scaffold owns up to this release; a dry run unless `--apply` |
+| `scaffold usage [PATH ...] [--days N] [--all]` | tokens and API-equivalent cost per repo from Claude Code and Codex logs, and Codex's plan limits |
 | `scaffold profiles` | list profiles |
 
 ### Agents
 
-Every repo gets specialist agents in `.claude/agents/`: a computational engineer, a designer, a frontend
-developer, a researcher, an analyst and a science writer. A sim, which has no UI, gets no designer or
-frontend developer. A session hands each task to the one whose description fits. The science roles share
-discipline briefs chosen by the profile. See [`agents/README.md`](agents/README.md).
+Every repo gets specialist agents in `.claude/agents/`: a scout, a computational engineer, a designer, a
+frontend developer, a researcher, an analyst and a science writer. A sim, which has no UI, gets no designer
+or frontend developer. A session hands each task to the one whose description fits. Each agent starts on
+a cheap model and is escalated on a signal, and agents pass short handoffs, not transcripts
+([`agents/COORDINATION.md`](agents/COORDINATION.md)). Codex gets the same roles through a section of
+`AGENTS.md`. `scaffold usage` shows what each repo actually costs. See [`agents/README.md`](agents/README.md).
 
 ### Keeping repos current
 

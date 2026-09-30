@@ -10,6 +10,7 @@
   scaffold check [PATH]
   scaffold status [PATH ...]
   scaffold update [PATH] [--apply] [--adopt FILE]
+  scaffold usage [PATH ...] [--days N] [--all]
   scaffold profiles
 
 Stdlib only (Python 3.9+). Needs git. `new` installs the preregistration kit when it can find kit_ap
@@ -40,10 +41,35 @@ LOCK = ".scaffold.lock"
 AGENTS_DIR = HERE / "agents"
 #: The specialist agents each kind gets, from templates/agents/. A sim has no UI, so no UI agents.
 AGENTS = {
-    "study": ("computational-engineer", "designer", "frontend-developer", "researcher", "analyst", "science-writer"),
-    "sim": ("computational-engineer", "researcher", "analyst", "science-writer"),
-    "tool": ("computational-engineer", "designer", "frontend-developer", "researcher", "analyst", "science-writer"),
+    "study": ("scout", "computational-engineer", "mathematician", "designer", "frontend-developer", "researcher",
+              "analyst", "science-writer"),
+    "sim": ("scout", "computational-engineer", "mathematician", "researcher", "analyst", "science-writer"),
+    "tool": ("scout", "computational-engineer", "mathematician", "designer", "frontend-developer", "researcher",
+             "analyst", "science-writer"),
 }
+#: Each agent's starting model and effort (agents/COORDINATION.md: start cheap, escalate on a signal). A
+#: profile overrides any of them in [agents.routing], as "model" or "model:effort".
+ROUTING = {
+    "scout": ("haiku", "low"),
+    "computational-engineer": ("sonnet", "high"),
+    "mathematician": ("sonnet", "high"),
+    "designer": ("sonnet", "medium"),
+    "frontend-developer": ("sonnet", "medium"),
+    "researcher": ("sonnet", "medium"),
+    "analyst": ("sonnet", "high"),
+    "science-writer": ("sonnet", "medium"),
+}
+ROLE_SUMMARIES = {
+    "scout": "finding and summarising; read-only",
+    "computational-engineer": "simulators, models, numerical code, pipelines",
+    "mathematician": "equations, constants, units and valid ranges; specifies calculators",
+    "designer": "layout and visual design on the design system",
+    "frontend-developer": "interfaces built from the designer's mockups",
+    "researcher": "literature, evidence and evidence tiers",
+    "analyst": "data analysis and statistics",
+    "science-writer": "papers and blog posts",
+}
+BLOCK_START, BLOCK_END = "<!-- scaffold:start -->", "<!-- scaffold:end -->"
 #: Files the scaffold owns in a repo it made, which `update` may replace. Everything else belongs to the
 #: repo. A sim inside a study owns none: it shares the study's.
 OWNED = {
@@ -290,13 +316,58 @@ def template_path(kind, rel):
     return own if own.exists() else TEMPLATES / "agents" / rel
 
 
-def render_agents(dest, kind, variables):
+def agent_vars(variables, rel, profile):
+    """An agent file's variables: the repo's, plus its starting model and effort."""
+    m = re.fullmatch(r"\.claude/agents/([\w-]+)\.md", rel)
+    if not m:
+        return variables
+    model, effort = ROUTING.get(m.group(1), ("inherit", "medium"))
+    override = str(profile.get("agents", {}).get("routing", {}).get(m.group(1), ""))
+    if override:
+        model, _, e = override.partition(":")
+        effort = e or effort
+    return {**variables, "model": model, "effort": effort}
+
+
+def render_owned(kind, rel, variables, profile):
+    return fill(template_path(kind, rel).read_text(encoding="utf-8"), agent_vars(variables, rel, profile), rel)
+
+
+def render_agents(dest, kind, variables, profile):
     for rel in OWNED[kind]:
         if rel.startswith(".claude/"):
             out = dest / rel
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(fill(template_path(kind, rel).read_text(encoding="utf-8"), variables, rel),
-                           encoding="utf-8")
+            out.write_text(render_owned(kind, rel, variables, profile), encoding="utf-8")
+
+
+def agents_block(kind, variables, profile):
+    """The scaffold's section of AGENTS.md: the roles and the coordination rules, for every assistant."""
+    roster = "\n".join(f"| `{a}` | {ROLE_SUMMARIES[a]} | `.claude/agents/{a}.md` |" for a in AGENTS[kind])
+    codex = profile.get("agents", {}).get("codex", {})
+    models = (f"use `{codex['default_model']}`" if codex.get("default_model") else "use the configured default model") + \
+        (f", and `{codex['escalation_model']}` when escalating" if codex.get("escalation_model") else "")
+    body = fill((TEMPLATES / "agents" / "AGENTS.block.md").read_text(encoding="utf-8"), {
+        **variables,
+        "agent_roster": "| role | takes | brief |\n|---|---|---|\n" + roster,
+        "codex_routing": f"{models}. Reasoning effort low for finding and summarising, medium by default, high "
+                         f"or xhigh when escalating.",
+    }, "AGENTS.block.md")
+    return f"{BLOCK_START}\n{body.rstrip()}\n{BLOCK_END}\n"
+
+
+def with_block(text, block):
+    """`text` with the scaffold's section replaced, or appended if it has none. Nothing else changes."""
+    if BLOCK_START in text and BLOCK_END in text:
+        head, rest = text.split(BLOCK_START, 1)
+        return head + block.rstrip("\n") + rest.split(BLOCK_END, 1)[1]
+    return (text.rstrip("\n") + "\n\n" if text.strip() else "") + block
+
+
+def write_agents_block(dest, kind, variables, profile):
+    path = dest / "AGENTS.md"
+    cur = path.read_text(encoding="utf-8") if path.exists() else ""
+    path.write_text(with_block(cur, agents_block(kind, variables, profile)), encoding="utf-8")
 
 
 def render(src, dest, variables, skip=()):
@@ -437,7 +508,7 @@ def cmd_new(a):
         skip = (".github", "Makefile", "CITATION.cff", "pyproject.toml", ".gitignore", "CLAUDE.md")
     render(TEMPLATES / a.kind, dest, v, skip=skip)
     if not inside:  # a sim inside a study uses the study's agents
-        render_agents(dest, a.kind, v)
+        render_agents(dest, a.kind, v, profile)
     print(f"created {a.kind} {dest}")
 
     if inside:
@@ -448,6 +519,7 @@ def cmd_new(a):
     write_licence(dest, profile)
     write_lock(dest, a.kind, profile)
     if a.no_git:
+        write_agents_block(dest, a.kind, v, profile)
         return
     git("init", "-q", "-b", "main", cwd=dest)
     git("add", "-A", cwd=dest)
@@ -456,6 +528,9 @@ def cmd_new(a):
         print(f"  ! initial commit failed: {err}")
     # A tool runs no experiments, so it takes the kit's defaults and not the profile's experiment modules.
     install_kit(dest, profile, find_kit_ap(a.kit_ap, profile), extra=[] if a.kind == "tool" else None)
+    write_agents_block(dest, a.kind, v, profile)
+    git("add", "AGENTS.md", cwd=dest)
+    git("commit", "-q", "-m", "Add the agents section to AGENTS.md (scientific-research-scaffold)", cwd=dest)
     org = profile.get("org", "<org>")
     manifest = f"{a.kind.upper()}.toml"
     if a.visibility:
@@ -851,7 +926,7 @@ def plan_update(root, adopt=()):
     recorded = lock.get("files", {})
     plan = []
     for rel in owned_files(kind, profile):
-        new = fill(template_path(kind, rel).read_text(encoding="utf-8"), v, rel)
+        new = render_owned(kind, rel, v, profile)
         path = root / rel
         if not path.exists():
             if lock or adopted(rel, adopt):
@@ -874,6 +949,16 @@ def plan_update(root, adopt=()):
                 plan.append((rel, "pin", cur, pinned, f"edited; only the scaffold ref moves, {old} -> {SCAFFOLD_REF}"))
             else:
                 plan.append((rel, "edited", cur, new, "edited; kept (--adopt to replace)"))
+    # The scaffold's section of AGENTS.md is the scaffold's by its markers; the rest of the file is not.
+    agents_md = root / "AGENTS.md"
+    cur = agents_md.read_text(encoding="utf-8") if agents_md.exists() else ""
+    new = with_block(cur, agents_block(kind, v, profile))
+    if cur == new:
+        plan.append(("AGENTS.md", "current", cur, new, ""))
+    elif BLOCK_START in cur or lock or adopted("AGENTS.md", adopt):
+        plan.append(("AGENTS.md", "update" if BLOCK_START in cur else "add", cur, new, "only the scaffold's section"))
+    else:
+        plan.append(("AGENTS.md", "missing", cur, new, "no scaffold section; --adopt AGENTS.md to add one"))
     return kind, profile, plan
 
 
@@ -963,6 +1048,177 @@ def cmd_status(a):
     return 0
 
 
+# -------------------------------------------------------------------------------------- usage
+
+TOKEN_KINDS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
+
+
+def project_of(cwd):
+    """The repo a session ran in: its working directory, with worktrees counted as their repo."""
+    if not cwd:
+        return "?"
+    return os.path.realpath(str(cwd).split("/.claude/worktrees/")[0])
+
+
+def read_jsonl(path):
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                try:
+                    yield json.loads(line)
+                except ValueError:
+                    continue
+    except OSError:
+        return
+
+
+def claude_usage(since):
+    """Token use per (project, model) from Claude Code's transcripts, each API response counted once.
+
+    One response is written as several transcript lines, each repeating its usage, so responses are
+    keyed by message and request id; summing lines would count most tokens several times over."""
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR", "~/.claude")).expanduser() / "projects"
+    responses = {}
+    for f in root.rglob("*.jsonl"):
+        for r in read_jsonl(f):
+            m = r.get("message") if isinstance(r.get("message"), dict) else {}
+            u = m.get("usage")
+            if not u or str(r.get("timestamp", "")) < since or not m.get("model") or m["model"].startswith("<"):
+                continue
+            cc = u.get("cache_creation") or {}
+            w5, w1 = cc.get("ephemeral_5m_input_tokens"), cc.get("ephemeral_1h_input_tokens")
+            if w5 is None and w1 is None:
+                w5, w1 = u.get("cache_creation_input_tokens") or 0, 0
+            responses[(m.get("id"), r.get("requestId"))] = (project_of(r.get("cwd")), m["model"], {
+                "input": u.get("input_tokens") or 0, "output": u.get("output_tokens") or 0,
+                "cache_write_5m": w5 or 0, "cache_write_1h": w1 or 0,
+                "cache_read": u.get("cache_read_input_tokens") or 0})
+    return responses.values()
+
+
+def codex_usage(since):
+    """Token use per (project, model) from Codex's session logs, one record per response, and the plan's
+    latest rate-limit windows."""
+    root = Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser() / "sessions"
+    responses, limits = {}, {}
+    for f in sorted(root.rglob("*.jsonl")):
+        cwd, model = "?", "?"
+        for r in read_jsonl(f):
+            p = r.get("payload") if isinstance(r.get("payload"), dict) else {}
+            ts = str(r.get("timestamp", ""))
+            if r.get("type") == "turn_context":
+                cwd, model = p.get("cwd") or cwd, p.get("model") or model
+            elif r.get("type") == "token_usage_record" and ts >= since:
+                u = p.get("usage") or {}
+                cached = u.get("cached_input_tokens") or 0
+                responses[p.get("response_id") or (f, ts)] = (project_of(cwd), model, {
+                    "input": max((u.get("input_tokens") or 0) - cached, 0), "output": u.get("output_tokens") or 0,
+                    "cache_write_5m": u.get("cache_write_input_tokens") or 0, "cache_write_1h": 0,
+                    "cache_read": cached})
+            elif p.get("type") == "token_count" and p.get("rate_limits"):
+                for w in ("primary", "secondary"):
+                    x = p["rate_limits"].get(w) or {}
+                    if x and ts >= limits.get(w, ("",))[0]:
+                        limits[w] = (ts, x.get("used_percent"), x.get("window_minutes"))
+    return responses.values(), limits
+
+
+def load_prices():
+    table = load_toml(AGENTS_DIR / "prices.toml")
+    return table, {m["id"]: m for m in table.get("model", [])}
+
+
+def api_cost(model, t, table, prices):
+    """What these tokens would cost at API rates, or None for a model with no price."""
+    p = next((v for k, v in prices.items() if model == k or model.startswith(k + "-")), None)
+    if p is None:
+        return None
+    c = table.get("cache", {})
+    return (t["input"] * p["input"] + t["output"] * p["output"] + t["cache_read"] * p["cache_read"]
+            + t["cache_write_5m"] * p["input"] * c.get("write_5m", 1.25)
+            + t["cache_write_1h"] * p["input"] * c.get("write_1h", 2.0)) / 1e6
+
+
+def tally(rows, wanted):
+    """Per project: responses, tokens by kind, cost, and the most-used model; plus the grand total."""
+    table, prices = load_prices()
+    out, total = {}, {"n": 0, "tokens": 0, "cost": 0.0}
+    for project, model, t in rows:
+        cost = api_cost(model, t, table, prices)
+        total["n"] += 1
+        total["tokens"] += sum(t.values())
+        total["cost"] += cost or 0
+        key = next((w for w in wanted if project == w or project.startswith(w + "/")), None)
+        if key is None:
+            continue
+        e = out.setdefault(key, {"n": 0, "t": dict.fromkeys(TOKEN_KINDS, 0), "cost": 0.0, "unpriced": 0,
+                                 "models": {}})
+        e["n"] += 1
+        for k in TOKEN_KINDS:
+            e["t"][k] += t[k]
+        e["models"][model] = e["models"].get(model, 0) + sum(t.values())
+        if cost is None:
+            e["unpriced"] += 1
+        else:
+            e["cost"] += cost
+    return out, total, table.get("as_of", "?")
+
+
+def human(n):
+    return (f"{n / 1e9:.1f}B" if n >= 1e9 else f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k" if n >= 500
+            else str(n))
+
+
+def cmd_usage(a):
+    days = a.days
+    since = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    claude_rows = list(claude_usage(since))
+    codex_rows, limits = codex_usage(since)
+    codex_rows = list(codex_rows)
+    if a.all:
+        wanted = sorted({p for p, _, _ in [*claude_rows, *codex_rows]})
+    else:
+        wanted = [str(Path(p).resolve()) for p in (a.paths or ["."])]
+    scale = 30 / days
+
+    def table(title, rows, priced):
+        per, total, as_of = tally(rows, wanted)
+        print(f"\n{title}, last {days} day(s)" + (f"; API-equivalent at agents/prices.toml rates ({as_of})" if priced else ""))
+        if not total["n"]:
+            print("  no sessions found")
+            return
+        head = ["repo", "responses", "output", "cache read", "cache write", "share"] + (["API $", "$/month"] if priced else []) + ["mostly"]
+        lines = [head]
+        for key, e in sorted(per.items(), key=lambda kv: -(kv[1]["cost"] or sum(kv[1]["t"].values()))):
+            t = e["t"]
+            share = sum(t.values()) / total["tokens"] if total["tokens"] else 0
+            row = [Path(key).name, str(e["n"]), human(t["output"]), human(t["cache_read"]),
+                   human(t["cache_write_5m"] + t["cache_write_1h"]), f"{share:.0%}"]
+            if priced:
+                row += [f"{e['cost']:,.0f}" + ("*" if e["unpriced"] else ""), f"{e['cost'] * scale:,.0f}"]
+            lines.append(row + [max(e["models"], key=e["models"].get)])
+        widths = [max(len(r[i]) for r in lines) for i in range(len(head))]
+        for r in lines:
+            print("  " + "  ".join(c.rjust(w) if 0 < i < len(head) - 1 else c.ljust(w)
+                                   for i, (c, w) in enumerate(zip(r, widths))))
+        if priced:
+            print(f"  all projects: ${total['cost']:,.0f} (about ${total['cost'] * scale:,.0f} a month at this pace)")
+        if priced and any(e["unpriced"] for e in per.values()):
+            print("  * some responses used a model with no price in agents/prices.toml; they are left out of $")
+        return total
+
+    table("Claude Code", claude_rows, priced=True)
+    print("  On a Claude subscription this is scale, not a bill; the plan's limits are shown by /usage in Claude Code.")
+    table("Codex", codex_rows, priced=False)
+    for w, label in (("primary", "short window"), ("secondary", "weekly window")):
+        if w in limits:
+            ts, pct, mins = limits[w]
+            print(f"  plan {label} ({mins} min): {pct:.0f}% used as of {ts[:16].replace('T', ' ')} UTC")
+    if limits:
+        print("  A repo's share of Codex tokens is a fair estimate of its share of the plan's usage.")
+    return 0
+
+
 # --------------------------------------------------------------------------------------- main
 
 def main(argv=None):
@@ -1003,6 +1259,12 @@ def main(argv=None):
     u.add_argument("--adopt", action="append", metavar="FILE",
                    help="replace an edited file, or add a missing one, anyway; a folder adopts all in it (repeatable)")
     u.set_defaults(fn=cmd_update)
+
+    us = sub.add_parser("usage", help="tokens and API-equivalent cost per repo, from Claude Code and Codex logs")
+    us.add_argument("paths", nargs="*", help="repos to report (default: this one)")
+    us.add_argument("--days", type=int, default=7, help="how far back to look (default 7)")
+    us.add_argument("--all", action="store_true", help="every project that has sessions, not just PATHs")
+    us.set_defaults(fn=cmd_usage)
 
     sub.add_parser("profiles", help="list profiles").set_defaults(fn=cmd_profiles)
 
