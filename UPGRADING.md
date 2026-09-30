@@ -16,9 +16,10 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
-## Unreleased
+## v0.5.1
 
-**`scaffold update` does:** keeps `"adopted": true` in the lock of a repo that adopted the scaffold.
+**`scaffold update` does:** moves the CI ref to `v0.5.1`, and keeps `"adopted": true` in the lock of a repo
+that adopted the scaffold.
 
 **The session does:**
 - **A repo that adopted the scaffold before this release** (its manifest was added by hand, not by

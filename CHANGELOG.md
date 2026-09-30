@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.1 (2026-09-30)
 
 - **Adopted repos stay adopted.** `.scaffold.lock` records `"adopted": true` for a repo that took up the scaffold
   rather than being made by it, and `update` never adds a missing file to such a repo unasked. Before, a lock

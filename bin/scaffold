@@ -39,7 +39,7 @@ PROFILES = HERE / "profiles"
 
 KINDS = ("study", "sim", "tool")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.5.0"
+SCAFFOLD_REF = "v0.5.1"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
