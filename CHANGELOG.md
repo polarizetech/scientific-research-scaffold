@@ -11,7 +11,7 @@
   and licence, and calculator reference values from PROBE on; `experiments/`, `data/manifest.json` and
   unregistered unit folders are warnings. PROTOCOL.md sections from Apps on are renumbered.
 - **The agents moved to their own repo**, [scientific-research-agents](https://github.com/polarizetech/scientific-research-agents),
-  included as a submodule at `agents/` pinned to `v0.1.0`: the briefs, the coordination protocol, discipline
+  included as a submodule at `agents/` pinned to `v0.1.1`: the briefs, the coordination protocol, discipline
   briefs, prices and the usage tool. `scaffold usage` passes through to its `bin/agents usage`. The
   `new-study` skill moved to `skills/`. Clone with `--recurse-submodules`.
 - **Agent coordination.** [`agents/COORDINATION.md`](agents/COORDINATION.md): one lead delegates, agents pass
