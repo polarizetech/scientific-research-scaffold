@@ -58,10 +58,17 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 | `scaffold update [PATH] [--apply] [--adopt FILE]` | bring the files the scaffold owns up to this release; a dry run unless `--apply` |
 | `scaffold profiles` | list profiles |
 
+### Agents
+
+Every repo gets specialist agents in `.claude/agents/`: a computational engineer, a designer, a frontend
+developer, a researcher, an analyst and a science writer. A sim, which has no UI, gets no designer or
+frontend developer. A session hands each task to the one whose description fits. The science roles share
+discipline briefs chosen by the profile. See [`agents/README.md`](agents/README.md).
+
 ### Keeping repos current
 
 `scaffold status ~/code/*` surveys every repo at once. `scaffold update` brings one repo's
-**scaffold-owned files** (the CI workflow, the `Makefile`, `shared/workbench.py`) up to this release,
+**scaffold-owned files** (the CI workflow, the `Makefile`, `shared/workbench.py`, the agents) up to this release,
 and never touches anything else. It replaces a file only when nobody has edited it since the scaffold
 wrote it, which it knows from `.scaffold.lock`, or by matching the file against what each earlier
 release would have written. An edited CI workflow gets only its scaffold `ref:` moved. Any other

@@ -37,12 +37,19 @@ KINDS = ("study", "sim", "tool")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
 SCAFFOLD_REF = "v0.2.0"
 LOCK = ".scaffold.lock"
+AGENTS_DIR = HERE / "agents"
+#: The specialist agents each kind gets, from templates/agents/. A sim has no UI, so no UI agents.
+AGENTS = {
+    "study": ("computational-engineer", "designer", "frontend-developer", "researcher", "analyst", "science-writer"),
+    "sim": ("computational-engineer", "researcher", "analyst", "science-writer"),
+    "tool": ("computational-engineer", "designer", "frontend-developer", "researcher", "analyst", "science-writer"),
+}
 #: Files the scaffold owns in a repo it made, which `update` may replace. Everything else belongs to the
 #: repo. A sim inside a study owns none: it shares the study's.
 OWNED = {
-    "study": (".github/workflows/check.yml", "Makefile", "shared/workbench.py"),
-    "sim": (".github/workflows/check.yml", "Makefile"),
-    "tool": (".github/workflows/check.yml", "Makefile"),
+    kind: (".github/workflows/check.yml", "Makefile", *(("shared/workbench.py",) if kind == "study" else ()),
+           ".claude/disciplines.md", *(f".claude/agents/{a}.md" for a in agents))
+    for kind, agents in AGENTS.items()
 }
 STAGES = ("SKETCH", "PROBE", "BENCH", "SHIPPED")
 APP_STATUSES = ("active", "superseded", "abandoned")
@@ -254,9 +261,42 @@ def template_vars(profile, name, question, **extra):
         "design_css": ds.get("css", "design.css"),
         "design_js_tag": f'<script type="module" src="design/{ds["js"]}"></script>' if ds.get("js") else "",
         "scaffold_ref": SCAFFOLD_REF,
+        "design_system": f"`{ds['repo']}`" if ds.get("repo") else
+                         "not named in this repo's profile: ask the user which one to use before designing",
+        "conventions": "\n".join(f"- {c}" for c in profile.get("agents", {}).get("conventions", [])) or
+                       "- None are named in the profile: follow this repo's existing configuration and code.",
+        "disciplines": discipline_briefs(profile.get("agents", {}).get("disciplines", [])),
     }
     v.update(extra)
     return v
+
+
+def discipline_briefs(names):
+    if not names:
+        return "None are named in this repo's profile. Ask the user which disciplines a task involves."
+    briefs = []
+    for n in names:
+        f = AGENTS_DIR / "disciplines" / f"{n}.md"
+        if not f.exists():
+            have = ", ".join(sorted(x.stem for x in (AGENTS_DIR / "disciplines").glob("*.md")))
+            raise Fail(f"no discipline brief {n!r} in agents/disciplines/ (have: {have})")
+        briefs.append(f.read_text(encoding="utf-8").strip())
+    return "\n\n".join(briefs)
+
+
+def template_path(kind, rel):
+    """Where the template for a file the scaffold owns lives: the kind's own, or the shared agents."""
+    own = TEMPLATES / kind / rel
+    return own if own.exists() else TEMPLATES / "agents" / rel
+
+
+def render_agents(dest, kind, variables):
+    for rel in OWNED[kind]:
+        if rel.startswith(".claude/"):
+            out = dest / rel
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(fill(template_path(kind, rel).read_text(encoding="utf-8"), variables, rel),
+                           encoding="utf-8")
 
 
 def render(src, dest, variables, skip=()):
@@ -396,6 +436,8 @@ def cmd_new(a):
     if inside:  # a sim inside a study shares the study's repo-level files
         skip = (".github", "Makefile", "CITATION.cff", "pyproject.toml", ".gitignore", "CLAUDE.md")
     render(TEMPLATES / a.kind, dest, v, skip=skip)
+    if not inside:  # a sim inside a study uses the study's agents
+        render_agents(dest, a.kind, v)
     print(f"created {a.kind} {dest}")
 
     if inside:
@@ -758,14 +800,15 @@ def past_renderings(kind, rel, m, pname):
     """Every text an earlier version of this scaffold would have written for `rel`, with that version's
     template and profile. A file matching one of them was never edited, so `update` may replace it.
     Needs this scaffold's git history; without it, nothing matches and files are treated as edited."""
-    code, out, _ = git("rev-list", "--all", "--", f"templates/{kind}/{rel}", f"profiles/{pname}.toml", cwd=HERE)
+    tpath = template_path(kind, rel).relative_to(HERE).as_posix()
+    code, out, _ = git("rev-list", "--all", "--", tpath, f"profiles/{pname}.toml", cwd=HERE)
     if code:
         return set()
     _, tags, _ = git("tag", "-l", "v*", cwd=HERE)
     refs = ["main", *tags.split()]
     texts = set()
     for sha in out.split():
-        tmpl = subprocess.run(["git", "show", f"{sha}:templates/{kind}/{rel}"], cwd=HERE,
+        tmpl = subprocess.run(["git", "show", f"{sha}:{tpath}"], cwd=HERE,
                               capture_output=True, text=True)
         prof = subprocess.run(["git", "show", f"{sha}:profiles/{pname}.toml"], cwd=HERE,
                               capture_output=True, text=True)
@@ -778,6 +821,11 @@ def past_renderings(kind, rel, m, pname):
         except Exception:  # noqa: BLE001 - an old template this version cannot fill matches nothing
             continue
     return texts
+
+
+def adopted(rel, adopt):
+    """--adopt names a file, or a folder of them (such as .claude/agents)."""
+    return any(rel == a.rstrip("/") or rel.startswith(a.rstrip("/") + "/") for a in adopt)
 
 
 def plan_update(root, adopt=()):
@@ -803,10 +851,10 @@ def plan_update(root, adopt=()):
     recorded = lock.get("files", {})
     plan = []
     for rel in owned_files(kind, profile):
-        new = fill((TEMPLATES / kind / rel).read_text(encoding="utf-8"), v, rel)
+        new = fill(template_path(kind, rel).read_text(encoding="utf-8"), v, rel)
         path = root / rel
         if not path.exists():
-            if lock or rel in adopt:
+            if lock or adopted(rel, adopt):
                 plan.append((rel, "add", "", new, ""))
             else:
                 plan.append((rel, "missing", "", new, "this repo was not made by the scaffold; --adopt to add"))
@@ -814,7 +862,7 @@ def plan_update(root, adopt=()):
         cur = path.read_text(encoding="utf-8")
         if cur == new:
             plan.append((rel, "current", cur, new, ""))
-        elif rel in adopt:
+        elif adopted(rel, adopt):
             plan.append((rel, "update", cur, new, "adopted: your edits are replaced"))
         elif recorded.get(rel) == sha256(cur):
             plan.append((rel, "update", cur, new, "unedited since the scaffold wrote it"))
@@ -841,7 +889,7 @@ def show_diff(rel, old, new, limit=40):
 def cmd_update(a):
     root = Path(a.path).resolve()
     kind, profile, plan = plan_update(root, adopt=set(a.adopt or ()))
-    unknown = set(a.adopt or ()) - {rel for rel, *_ in plan}
+    unknown = {x for x in a.adopt or () if not any(adopted(rel, [x]) for rel, *_ in plan)}
     if unknown:
         raise Fail(f"--adopt names files the scaffold does not own here: {', '.join(sorted(unknown))}")
     print(f"{root.name} ({kind}), to scaffold {SCAFFOLD_REF}:")
@@ -891,7 +939,15 @@ def cmd_status(a):
             checked += f", {len(rep.warns)} warning(s)"
         try:
             _, _, plan = plan_update(root)
-            todo = [f"{action} {rel}" for rel, action, *_ in plan if action in ("add", "update", "pin", "missing")]
+            todo, agents = [], {}
+            for rel, action, *_ in plan:
+                if action not in ("add", "update", "pin", "missing"):
+                    continue
+                if rel.startswith(".claude/"):  # one entry for the agent files, not seven
+                    agents[action] = agents.get(action, 0) + 1
+                else:
+                    todo.append(f"{action} {rel}")
+            todo += [f"{action} {n} agent file(s)" for action, n in agents.items()]
             kept = sum(action == "edited" for _, action, *_ in plan)
             pending = "; ".join(todo) or "up to date"
             if kept:
@@ -944,7 +1000,8 @@ def main(argv=None):
     u = sub.add_parser("update", help="bring the files the scaffold owns up to this release (dry run by default)")
     u.add_argument("path", nargs="?", default=".")
     u.add_argument("--apply", action="store_true", help="write the changes (needs those files committed first)")
-    u.add_argument("--adopt", action="append", metavar="FILE", help="replace an edited file anyway (repeatable)")
+    u.add_argument("--adopt", action="append", metavar="FILE",
+                   help="replace an edited file, or add a missing one, anyway; a folder adopts all in it (repeatable)")
     u.set_defaults(fn=cmd_update)
 
     sub.add_parser("profiles", help="list profiles").set_defaults(fn=cmd_profiles)

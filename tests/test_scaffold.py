@@ -222,9 +222,9 @@ class Scaffold(unittest.TestCase):
         repo = self.study()
         lock = scaffold.read_lock(repo)
         self.assertEqual(lock["scaffold"], scaffold.SCAFFOLD_REF)
-        self.assertEqual(set(lock["files"]), {".github/workflows/check.yml", "Makefile", "shared/workbench.py"})
+        self.assertEqual(set(lock["files"]), set(scaffold.OWNED["study"]))
         self.assertEqual(set(self.plan(repo).values()), {"current"})
-        self.assertEqual(scaffold.read_lock(self.tool())["files"].keys(), {".github/workflows/check.yml", "Makefile"})
+        self.assertEqual(set(scaffold.read_lock(self.tool())["files"]), set(scaffold.OWNED["tool"]))
 
     def age(self, repo, ref="v0.0.9"):
         """Make the repo look as if an earlier release wrote its CI, and nobody has touched it since."""
@@ -344,6 +344,67 @@ class Scaffold(unittest.TestCase):
         self.assertRegex(out, r"colony\s+study\s+SKETCH\s+v\d+\.\d+\.\d+\s+v\d+\.\d+\.\d+\s+ok\s+up to date")
         self.assertRegex(out, r"recorder\s+tool")
         self.assertRegex(out, r"loose\s+-\s+.*no manifest")
+
+    # ---------------------------------------------------------------------------------- agents
+
+    def frontmatter(self, path):
+        text = path.read_text()
+        self.assertTrue(text.startswith("---\n"), path.name)
+        head = text.split("---\n")[1]
+        fields = dict(line.split(": ", 1) for line in head.strip().splitlines())
+        return fields, text
+
+    def test_each_kind_gets_its_agents(self):
+        study, tool = self.study(), self.tool()
+        self.assertEqual(run("new", "sim", "memory", "-q", "Tape", "--dir", str(self.tmp), "--profile", "example",
+                             "--visibility", "public", "--no-git")[0], 0)
+        for repo, kind in ((study, "study"), (tool, "tool"), (self.tmp / "memory", "sim")):
+            agents = repo / ".claude" / "agents"
+            self.assertEqual(sorted(f.stem for f in agents.glob("*.md")), sorted(scaffold.AGENTS[kind]), kind)
+            self.assertTrue((repo / ".claude" / "disciplines.md").exists())
+        self.assertNotIn("designer", scaffold.AGENTS["sim"])
+        self.assertEqual(run("new", "sim", "inner", "-q", "Sim", "--inside", str(study))[0], 0)
+        self.assertFalse((study / "sims" / "inner" / ".claude").exists())
+
+    def test_agent_files_are_valid_subagents(self):
+        repo = self.study()
+        for f in sorted((repo / ".claude" / "agents").glob("*.md")):
+            fields, text = self.frontmatter(f)
+            self.assertEqual(fields["name"], f.stem)
+            self.assertGreater(len(fields["description"]), 80, f.name)
+            self.assertNotIn(": ", fields["description"], f"{f.name}: ': ' breaks YAML frontmatter")
+            self.assertNotIn("{{", text, f.name)
+
+    def test_agents_carry_the_profile(self):
+        ours = self.study("ours", profile="polarizetech")
+        disciplines = (ours / ".claude" / "disciplines.md").read_text()
+        for heading in ("## Neuroscience", "## Cardiology", "## Auditory neuroscience", "## Bioelectricity"):
+            self.assertIn(heading, disciplines)
+        engineer = (ours / ".claude" / "agents" / "computational-engineer.md").read_text()
+        self.assertIn("pyright in strict mode", engineer)
+        self.assertIn("`polarizetech/polarize-ui`", (ours / ".claude" / "agents" / "designer.md").read_text())
+
+        plain = self.study("plain", profile="example")
+        self.assertIn("None are named", (plain / ".claude" / "disciplines.md").read_text())
+        self.assertIn("follow this repo's existing configuration",
+                      (plain / ".claude" / "agents" / "computational-engineer.md").read_text())
+        self.assertIn("not named in this repo's profile", (plain / ".claude" / "agents" / "designer.md").read_text())
+
+    def test_unknown_discipline_is_an_error(self):
+        with self.assertRaises(scaffold.Fail):
+            scaffold.discipline_briefs(["alchemy"])
+
+    def test_update_adopts_agents_into_an_existing_repo(self):
+        repo = self.study()
+        (repo / scaffold.LOCK).unlink()
+        shutil.rmtree(repo / ".claude")
+        self.committed(repo)
+        plan = self.plan(repo)
+        self.assertEqual({plan[f".claude/agents/{a}.md"] for a in scaffold.AGENTS["study"]}, {"missing"})
+        self.assertEqual(run("update", str(repo), "--apply", "--adopt", ".claude/agents")[0], 0)
+        self.assertEqual(sorted(f.stem for f in (repo / ".claude" / "agents").glob("*.md")),
+                         sorted(scaffold.AGENTS["study"]))
+        self.assertFalse((repo / ".claude" / "disciplines.md").exists())
 
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):

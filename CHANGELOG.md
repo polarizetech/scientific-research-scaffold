@@ -14,6 +14,12 @@
   known from the new `.scaffold.lock` that `new` writes, or by matching what an earlier release wrote. In
   an edited workflow it moves only the scaffold `ref:`; other edited files are kept unless `--adopt`ed. A
   dry run unless `--apply`; refuses to overwrite uncommitted work; never commits. PROTOCOL.md § 12.
+- **Specialist agents.** Every new repo gets Claude Code subagents in `.claude/agents/`:
+  `computational-engineer`, `designer`, `frontend-developer`, `researcher`, `analyst` and `science-writer`
+  (a sim has no UI agents), plus `.claude/disciplines.md`. A profile's new `[agents]` table chooses the
+  discipline briefs (`agents/disciplines/`) and the code conventions written into the agents. The agents
+  are scaffold-owned, so `update` keeps them current; `--adopt` now takes a folder, to add them to an
+  existing repo. Generated `CLAUDE.md` says which agent takes which task, and in what order.
 - Studies and sims list the tools they use under `[[tools]]`, and `check` fails a tool pinned to a branch.
 - PROTOCOL.md sections from Preregistration on are renumbered by one (Preregistration is now § 8).
 - The built-in TOML parser (Python < 3.11) reads arrays that span lines, and decodes non-ASCII strings

@@ -126,6 +126,8 @@ working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
   data/manifest.json   every dataset by DOI or URL plus sha256; raw data is gitignored and fetched
   shared/workbench.py  the one resolver for workbench tools (§ 4)
   .agents/             the prereg kit's protocols and tools
+  .claude/agents/      specialist agents: engineer, designer, frontend, researcher, analyst, writer
+  .claude/disciplines.md   the research disciplines those agents draw on, from the profile
 ```
 
 ### Apps are for exploring; experiments are for testing
@@ -344,7 +346,8 @@ It exits nonzero on any failure, so it can gate CI. Warnings are printed and do 
 This section is advice about the tool, not rules `check` enforces.
 
 A repo the scaffold made records what it wrote in `.scaffold.lock`: the release, and a hash of each
-file the scaffold **owns**. Those are the CI workflow, the `Makefile` and, in a study, `shared/workbench.py`.
+file the scaffold **owns**. Those are the CI workflow, the `Makefile`, in a study `shared/workbench.py`, and the
+agents in `.claude/agents/` with `.claude/disciplines.md` ([`agents/README.md`](agents/README.md)).
 Everything else belongs to the repo from the moment it is created.
 
 `scaffold update` moves the owned files to the current release:

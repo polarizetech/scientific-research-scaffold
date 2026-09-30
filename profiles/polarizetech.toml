@@ -27,3 +27,12 @@ env_aliases = ["AUDIO_PROJECTS"]
 [licence]
 code = "MIT"
 docs = "CC-BY-4.0"
+
+[agents]
+disciplines = ["neuroscience", "cardiology", "auditory-electrophysiology", "bioelectricity"]
+conventions = [
+  "Python: typed throughout (every function annotated); new packages are checked with pyright in strict mode, and an existing repo keeps its mode until someone decides to raise it.",
+  "Python lint and format: ruff, line length 100.",
+  "TypeScript: strict mode. React UIs use shadcn/ui components from the design system.",
+  "Minimal and readable: the smallest change that works, no speculative abstraction, code a reviewer can follow in one pass.",
+]

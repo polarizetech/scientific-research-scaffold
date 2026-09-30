@@ -27,3 +27,7 @@ env_aliases = []                             # older env var names, still honour
 [licence]
 code = "MIT"
 docs = "CC-BY-4.0"
+
+[agents]                                     # the specialist agents every repo gets (.claude/agents/)
+disciplines = []                             # briefs from agents/disciplines/, by file name
+conventions = []                             # house rules for code, one per line; empty means follow each repo's own config
