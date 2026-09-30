@@ -10,4 +10,5 @@ profile = "{{profile}}"
 project = "{{name}}"
 claim_prefix = ""
 
-# Apps and sims are appended below by `scaffold new app` and `scaffold new sim --inside .`
+# Apps, sims, datasets and calculators are appended below by `scaffold new app|sim|dataset|calculator`.
+# Tools this study uses are pinned under [[tools]] (repo and a tag).

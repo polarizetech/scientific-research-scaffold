@@ -3,7 +3,7 @@ message: "If you use or adapt this protocol or software, please cite it as below
 title: "scientific-research-scaffold: a protocol for studies and simulators across repositories"
 abstract: >-
   A protocol for laying out research across repositories, in two kinds: a study (one question, with
-  versioned exploratory apps, simulators and preregistered experiments) and a sim (one simulator under
+  apps, simulators, dataset analyses and calculators) and a sim (one simulator under
   adaptive preregistration). Findings go to one shared research corpus, referenced by claim ID. Includes
   scaffold, a CLI that creates repos in this shape and checks existing ones against it.
 type: software

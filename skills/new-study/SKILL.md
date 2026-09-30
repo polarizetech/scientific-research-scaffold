@@ -10,8 +10,8 @@ current repo, or ask); never guess a home-directory path.
 
 1. **Ask for what only the person can decide:** the subject name (no `lab-`/`sim-` prefix), and whether it
    is a study, a sim or a tool. A study or sim needs its one-sentence question; a tool needs its job
-   instead, since it holds no research (PROTOCOL.md § 7). If a sim: its own repo, or `--inside` an existing study?
-   The default is inside, until a second study needs it (PROTOCOL.md § 6). Which profile? (There is no
+   instead, since it holds no research (PROTOCOL.md § 8). If a sim: its own repo, or `--inside` an existing study?
+   The default is inside, until a second study needs it (PROTOCOL.md § 7). Which profile? (There is no
    default; `$SCAFFOLD_PROFILE` may already name one.)
 2. **Create it:** `scaffold new study|sim <name> -q "<question>" --profile <p>`, or
    `scaffold new tool <name> -j "<job>" --profile <p>`. Pass
@@ -25,6 +25,11 @@ To bring existing repos up to the current scaffold, run `scaffold status <paths>
 `scaffold update <repo>` (a dry run) for each repo, and show the person the plan. Run `--apply` only with
 their go-ahead, and never pass `--adopt` for a file they have not agreed to lose their edits in. Leave the
 result uncommitted for them to review.
+
+**Adding work to a study.** When someone wants to explore or demonstrate something (an app), model it (a
+sim), test it against existing data (a dataset) or pin down its mathematics (a calculator), create the unit
+with `scaffold new app|sim|dataset|calculator <slug> -q "..."` and follow its section of `PROTOCOL.md`,
+including what it needs before it starts. Preregistrations live in the unit they test.
 
 For an existing repo, follow `ADOPTING.md`: additive first (manifest with `path` entries, kind line,
 RESEARCH.md, the kit), and the repo's own gate must pass exactly as before.

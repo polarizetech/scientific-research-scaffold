@@ -476,6 +476,85 @@ class Scaffold(unittest.TestCase):
         self.assertIn("Claude Code, last 3 day(s)", r.stdout)
         self.assertIn("no sessions found", r.stdout)
 
+    # ------------------------------------------------------------------------------ work types
+
+    def test_new_study_has_work_type_folders_not_experiments(self):
+        repo = self.study()
+        self.assertFalse((repo / "experiments").exists())
+        self.assertFalse((repo / "data" / "manifest.json").exists())
+        for folder in ("apps", "sims", "datasets", "calculators"):
+            self.assertTrue((repo / folder / "README.md").exists(), folder)
+
+    def test_dataset_is_pinned_once_selected(self):
+        repo = self.study()
+        code, out = run("new", "dataset", "resting-eeg", "-q", "Does it?", "--study", str(repo))
+        self.assertEqual(code, 0, out)
+        ds = repo / "datasets" / "resting-eeg"
+        for f in ("DATASET.toml", "README.md", "analysis/README.md", "preregistrations/.gitkeep"):
+            self.assertTrue((ds / f).exists(), f)
+        self.assertIn('[[datasets]]\nslug = "resting-eeg"', (repo / "STUDY.toml").read_text())
+        self.assertEqual(run("check", str(repo))[0], 0)  # a candidate needs nothing more
+
+        toml = ds / "DATASET.toml"
+        toml.write_text(toml.read_text().replace('status = "candidate"', 'status = "selected"')
+                        .replace('version = ""', 'version = "latest"'))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        for needle in ("needs provider", "needs accession", "needs licence", "pinned to a version, not latest",
+                       "selection criteria"):
+            self.assertIn(needle, out)
+        toml.write_text(toml.read_text().replace('provider = ""', 'provider = "openneuro"')
+                        .replace('accession = ""', 'accession = "ds004024"').replace('"latest"', '"1.0.2"')
+                        .replace('licence = ""', 'licence = "CC0-1.0"')
+                        .replace("criteria = []", 'criteria = ["resting-state EEG", "open licence"]'))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+
+    def test_calculator_needs_reference_values_from_probe_on(self):
+        repo = self.study()
+        code, out = run("new", "calculator", "ear-canal-resonance", "-q", "Resonance from canal length",
+                        "--study", str(repo))
+        self.assertEqual(code, 0, out)
+        calc = repo / "calculators" / "ear-canal-resonance"
+        self.assertIn("Resonance from canal length", (calc / "CALCULATOR.md").read_text())
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("reference.csv has no reference values", out)  # a warning at SKETCH
+
+        manifest = repo / "STUDY.toml"
+        manifest.write_text(manifest.read_text().replace('stage = "SKETCH"', 'stage = "PROBE"'))
+        readme = repo / "README.md"
+        readme.write_text(readme.read_text().replace("**Stage:** SKETCH", "**Stage:** PROBE"))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("required from PROBE on", out)
+        (calc / "reference.csv").write_text("case,source,length_mm,f_hz\nadult,hand,25,3430\n")
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+
+    def test_old_layout_and_unregistered_units_warn(self):
+        repo = self.study()
+        (repo / "experiments" / "E01-old").mkdir(parents=True)
+        (repo / "data").mkdir()
+        (repo / "data" / "manifest.json").write_text('{"datasets": []}')
+        (repo / "datasets" / "stray").mkdir()
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        for needle in ("experiments/ is the old layout", "data/manifest.json is the old layout",
+                       "datasets/stray is not registered"):
+            self.assertIn(needle, out)
+
+    def test_units_need_a_study_and_a_question(self):
+        self.assertEqual(run("new", "dataset", "x-data", "--study", str(self.study()))[0], 1)
+        self.assertEqual(run("new", "calculator", "x-calc", "-q", "?", "--study", str(self.tmp))[0], 1)
+
+    def test_tool_holds_no_preregistrations(self):
+        repo = self.tool()
+        (repo / "preregistrations").mkdir()
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("preregistrations is research", out)
+
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):
             self.assertEqual(run("new", "study", bad, "-q", "?", "--dir", str(self.tmp), "--no-git")[0], 1, bad)

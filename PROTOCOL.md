@@ -16,8 +16,9 @@ what `scaffold check` enforces; where a rule is advice rather than a check, it s
 
 ## 0. The idea in one paragraph
 
-A study is **one question, pursued with whatever it takes**: small versioned apps to explore it,
-simulations to model it, preregistered experiments to test it, and datasets to test it against. Its
+A study is **one question, pursued with whatever it takes**: apps to explore and demonstrate it, sims to
+model it, datasets to test it against, calculators for its mathematics, and tools it builds for reuse. Each
+of these **work types** has its own folder, its own entry requirements and its own strictness (§ 5). Its
 findings do not live in the study: they go to **one shared research corpus**, which the study refers to by
 claim ID. Its predictions are written down and tagged **before** anything runs. Simulators it depends on
 are either folders inside it or, once they earn it, **their own versioned repos**, pinned like any other
@@ -60,13 +61,13 @@ in their names.
 
 ## 2. The manifest
 
-Every study has `STUDY.toml`; every sim has `SIM.toml`; every tool has `TOOL.toml` (§ 7). It is the machine-readable register for the repo.
+Every study has `STUDY.toml`; every sim has `SIM.toml`; every tool has `TOOL.toml` (§ 8). It is the machine-readable register for the repo.
 
 ```toml
 kind = "study"
 name = "reef-acoustics"
 question = "Does the sound of a reef track its coral cover across survey sites?"
-stage = "SKETCH"                 # SKETCH | PROBE | BENCH | SHIPPED (§ 10)
+stage = "SKETCH"                 # SKETCH | PROBE | BENCH | SHIPPED (§ 13)
 visibility = "private"           # public | private: decided, never defaulted
 visibility_decided = "2026-01-15"
 profile = "polarizetech"
@@ -115,26 +116,23 @@ working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
   AGENTS.md            instructions every coding assistant reads (managed by the prereg kit)
   STUDY.toml           the manifest (§ 2)
   RESEARCH.md          which corpus project and claim IDs this study bears on
-  EXPERIMENTS.md       the experiment register
+  EXPERIMENTS.md       the register of every preregistration, wherever it lives (the prereg kit's)
   LICENSE              code MIT; text and figures CC BY 4.0
   CITATION.cff
   pyproject.toml + uv.lock   every library, tool and external sim pinned to a tag
   Makefile             `make check` runs everything CI runs
-  apps/<vN-slug>/      versioned exploratory apps (§ 5)
-  sims/<slug>/         simulators still living inside the study (§ 6)
-  experiments/<EID>/   preregistered experiments (§ 8)
-  data/manifest.json   every dataset by DOI or URL plus sha256; raw data is gitignored and fetched
+  apps/<vN-slug>/      interactive exploration and demonstration, one folder per version (§ 6)
+  sims/<slug>/         simulators still living inside the study (§ 7)
+  datasets/<slug>/     dataset analyses: the data pinned, the analysis preregistered (§ 9)
+  calculators/<slug>/  the study's mathematics as tested code (§ 10)
   shared/workbench.py  the one resolver for workbench tools (§ 4)
   .agents/             the prereg kit's protocols and tools
   .claude/agents/      specialist agents: engineer, designer, frontend, researcher, analyst, writer
   .claude/disciplines.md   the research disciplines those agents draw on, from the profile
 ```
 
-### Apps are for exploring; experiments are for testing
-
-An app is a small piece of software for trying out part of the question by hand: playing a stimulus,
-scrubbing through a recording, seeing whether an idea looks like anything. It answers "is this worth
-testing?" A result from an app is never a finding. A finding comes from a preregistered experiment.
+A folder for a work type exists only once the study has one of them: `scaffold new
+app|sim|dataset|calculator` creates it, registers it in `STUDY.toml`, and gives it the files its type needs.
 
 ---
 
@@ -147,9 +145,9 @@ tools depend on other tools and libraries; nothing depends on a study. Nobody im
 |---|---|---|
 | a library, a tool or an external sim | a pinned **tag** in `pyproject.toml` and `uv.lock`, and in the manifest's `[[sims]]` or `[[tools]]` | a branch, a sibling folder, an editable install, for anything a result is quoted from |
 | the corpus | its claim IDs and links, in `RESEARCH.md` | a submodule, a copy, an import |
-| a dataset | DOI or URL plus sha256 in `data/manifest.json` | committed bulk data |
+| a dataset | a dataset-fetch reference pinned to a version, in `datasets/<slug>/DATASET.toml` (§ 9) | committed bulk data, or "latest" |
 | a workbench tool | `shared/workbench.py`, for local development only | an absolute path |
-| the design system | served through an allow-list by each app's `serve.py` (§ 5) | a CDN |
+| the design system | served through an allow-list by each app's `serve.py` (§ 6) | a CDN |
 
 **The workbench resolver.** Tools that have not yet been released as libraries are reached through
 `shared/workbench.py`, generated from the profile. It:
@@ -169,7 +167,44 @@ else can regenerate. `scaffold check` flags them.
 
 ---
 
-## 5. Apps
+## 5. Work types
+
+A study is built from units of work, each of one type. The types differ in what they are for and how
+strict they must be, so each has a folder, a register in `STUDY.toml`, and rules of its own:
+
+| type | where | for | before it starts |
+|---|---|---|---|
+| **app** | `apps/vN-<slug>/` | exploring or demonstrating a concept interactively; may become a deliverable | the concept, the research it draws on, and what it should help someone understand |
+| **sim** | `sims/<slug>/`, or its own repo | running a model forward, often on an existing open-source simulator | the model's equations and every parameter with its source, the question, and a prediction |
+| **dataset** | `datasets/<slug>/` | testing the question against data that exists | a pinned reference to the data, selection criteria, and a preregistered analysis plan, before the outcome is opened |
+| **calculator** | `calculators/<slug>/` | the mathematics: equations, constants, ratios, scaling laws | the equation, its source or derivation, units, valid range and reference values |
+| **tool** | its own repo (§ 8) | reusable code with no research of its own | a job, and the repos that will use it |
+
+### The cycle
+
+The types feed each other through the research corpus, in both directions:
+
+- **Research to unit.** A unit starts only when the research meets its entry requirement above. A sim with
+  unsourced parameters, or a dataset chosen before its criteria were written, has not met it.
+- **Unit to research.** Every unit ends by writing back: a sim or dataset result as a finding, against its
+  frozen predictions; what an app or calculator revealed as understanding, labelled as exploration; and in
+  every case what to research or refine next.
+- **Research changes a unit.** When research a unit depends on changes, the unit is revisited: a new app
+  version, a sim rerun, a calculator's values rechecked.
+
+Nothing an app shows is a finding. A finding comes from a preregistered prediction, in a sim, a dataset or a
+calculator (§ 11).
+
+### Adding a work type
+
+When a new kind of work keeps appearing and needs its own strictness, it becomes a type. It gets: a folder
+name (plural, saying what is built), a record of what it is, an entry requirement, a way of writing back
+to research, a `scaffold new` command, and `check` rules. It is added to this section and to the table in
+§ 14. Until then, it lives in the closest existing type.
+
+---
+
+## 6. Apps
 
 - **One folder per version**: `apps/v1-site-listener/`, `apps/v2-site-comparison/`. A new idea gets a new
   version; a superseded version is left as it was and marked `superseded` in the manifest, so the path the
@@ -183,7 +218,7 @@ else can regenerate. `scaffold check` flags them.
 
 ---
 
-## 6. Sims
+## 7. Sims
 
 A sim is a simulator under adaptive preregistration. Its layout is the prereg kit's:
 
@@ -191,7 +226,7 @@ A sim is a simulator under adaptive preregistration. Its layout is the prereg ki
 <sim>/
   README.md  CLAUDE.md  AGENTS.md  SIM.toml  LICENSE  CITATION.cff
   model/               the simulator, tagged model-vX.Y.Z when it changes
-  experiments/<EID>/   PREREG.md, DEVIATIONS.md, RESULTS.md, ENV.lock, config, run.py, outputs/
+  preregistrations/<EID>/   PREREG.md, DEVIATIONS.md, RESULTS.md, ENV.lock, config, run.py, outputs/
   EXPERIMENTS.md       the register
   ASSUMPTIONS.md       every parameter, tagged [LIT] [DERIVED] or [ARBITRARY]
   CHANGELOG.md         what changed between model versions, and why
@@ -219,7 +254,7 @@ study then deletes the folder and pins the new repo by tag in its manifest and l
 
 ---
 
-## 7. Tools
+## 8. Tools
 
 A tool does **one job for other repos** and holds no research: an instrument and its recorder, a data
 service, an importable library. A study asks a question; a tool is something studies use to answer theirs.
@@ -248,8 +283,8 @@ repo = "your-org/reef-acoustics"
 uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
 ```
 
-- **No research in a tool.** No question, no `[corpus]`, no `RESEARCH.md`, `EXPERIMENTS.md` or
-  `experiments/`. A measurement made with a tool, even a measurement *of* the tool, is a finding of the
+- **No research in a tool.** No question, no `[corpus]`, no `RESEARCH.md`, `EXPERIMENTS.md`,
+  `experiments/` or `preregistrations/`. A measurement made with a tool, even a measurement *of* the tool, is a finding of the
   study that made it, recorded there against the tool release it used.
 - **One version, said the same everywhere.** `version` in `TOOL.toml`, `[project] version` in
   `pyproject.toml`, `version` in `CITATION.cff`, and a heading in `CHANGELOG.md`. Releases are tagged
@@ -268,9 +303,71 @@ uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
 
 ---
 
-## 8. Preregistration
+## 9. Datasets
 
-Every experiment, in a study or a sim, follows the prereg kit's protocol:
+A dataset analysis tests the question against data that already exists. Its predictions and its
+analysis are as much a deliverable as its result, so it is the strictest of the work types.
+
+```
+datasets/<slug>/
+  DATASET.toml         where the data lives, its licence, and why it was chosen
+  README.md            the question, and the order below
+  analysis/            the program that produces every number, in named stages
+  preregistrations/<EID>/   PREREG.md, DEVIATIONS.md, RESULTS.md
+```
+
+- **The data is referenced, never committed.** `DATASET.toml` holds a dataset-fetch reference: provider,
+  accession, and a **pinned version**, never "latest", with the data's licence. `status` moves from
+  `candidate` to `selected` to `fetched`; `check` requires the full reference once it is selected.
+- **Criteria before selection.** What the data must contain to answer the question is written in
+  `[selection] criteria` before a dataset is selected.
+- **The order**, each step closing a way analyses have failed: check that the design can answer the
+  question; check that the method works on this data without opening the outcome; preregister the
+  predictions and the analysis plan, naming the stage that first opens the outcome; say what an adequate
+  test of the smallest effect of interest needs, so a null means something; then run it, and make every
+  number regenerable from the pinned data and the code.
+- **Tools it uses are pinned**: the organisation's by tag, open-source packages by version.
+
+`scaffold new dataset <slug> -q "..."` creates one.
+
+---
+
+## 10. Calculators
+
+A calculator is one piece of the study's mathematics as tested code: an equation, a constant, a ratio, a
+scaling law. Biology is variable, but some of what looks variable is not: a value that differs person to
+person may reduce to a few measurable variables. Writing those down once, with their sources, lets the
+research, sims, apps and analyses all use the same numbers.
+
+```
+calculators/<slug>/
+  CALCULATOR.md        the equation, every symbol with its units, parameters with sources, valid range
+  reference.csv        reference cases: inputs, expected output, and where each comes from
+  (the code)           typed, one function per quantity; tests run every row of reference.csv
+  preregistrations/<EID>/   when the calculator predicts something measurable
+```
+
+- **Every parameter has a source**, tagged `[LIT: doi]`, `[DERIVED: from what]` or `[ARBITRARY]`, with a
+  BioNumbers ID where one exists. A value no one could verify is marked as a gap, not guessed.
+- **Reference values** from a paper or a hand calculation are required from the PROBE stage on; `check`
+  warns at SKETCH.
+- **The same maths is recorded in the research corpus**, in the study's project under `calculators/`, so
+  that it outlives the study.
+- **A prediction** a calculator makes about measured data is preregistered like any other.
+- **When a second study needs it**, it moves into a tool, pinned by tag, as a sim would.
+
+This follows practice in quantitative biology: curated values with their literature source
+(BioNumbers), and models that state their reference description and expected results (MIRIAM).
+
+`scaffold new calculator <slug> -q "..."` creates one.
+
+---
+
+## 11. Preregistration
+
+Every prediction that could be quoted, in a sim, a dataset or a calculator, follows the prereg kit's
+protocol. A preregistration lives in the unit it tests, in `<unit>/preregistrations/<EID>/`, and is
+listed in `EXPERIMENTS.md`:
 
 1. `PREREG.md` is written and tagged `<EID>-prereg` **before** the first run that could be quoted.
 2. Predictions are risky, numeric and directional, and each says what would count against it.
@@ -282,16 +379,16 @@ The kit is installed, not linked: `kit_ap init` copies the protocols into `.agen
 commit in `.agents/kit_ap.lock`. `scaffold new` runs it for you when it can find the kit.
 
 A repo that already froze analyses under an **earlier** preregistration system keeps them exactly as
-frozen. It uses the kit for new experiments only, and lists the earlier ones in `EXPERIMENTS.md` with a
+frozen. It uses the kit for new preregistrations only, and lists the earlier ones in `EXPERIMENTS.md` with a
 note saying which system froze them. Converting a frozen record would change the thing the freeze exists
 to protect.
 
 ---
 
-## 9. Research
+## 12. Research
 
 Findings are written to the **corpus**, in the study's project folder there. The study carries only
-`RESEARCH.md`: the corpus project, the claim prefix, and the claim IDs each experiment bears on.
+`RESEARCH.md`: the corpus project, the claim prefix, and the claim IDs each unit bears on.
 
 - **A study never raises a claim's tier.** The corpus decides what a result does to a claim.
 - **The corpus is never a submodule of a study.** Two working copies of one corpus drift.
@@ -299,7 +396,7 @@ Findings are written to the **corpus**, in the study's project folder there. The
 
 ---
 
-## 10. Stages
+## 13. Stages
 
 How strict to be scales with what a mistake would cost. Declare the stage in the manifest and the README.
 
@@ -315,7 +412,7 @@ and saying plainly what was not done.
 
 ---
 
-## 11. What `scaffold check` enforces
+## 14. What `scaffold check` enforces
 
 | check | study | sim | sim inside a study | tool |
 |---|---|---|---|---|
@@ -329,9 +426,12 @@ and saying plainly what was not done.
 | the manifest names a corpus project (`[corpus] project`) | ✓ | warning | | |
 | prereg kit installed (`.agents/kit_ap.lock` with the `prereg` module) | ✓ | ✓ | | |
 | every app and local sim listed exists; every app has `index.html` | ✓ | | | |
+| a dataset listed has `DATASET.toml`; once selected, it is pinned to a version with a provider, accession, licence and selection criteria | ✓ | | | |
+| a calculator listed has `CALCULATOR.md`, and reference values in `reference.csv` from PROBE on (a warning at SKETCH) | ✓ | | | |
+| `experiments/` or `data/manifest.json` (the old layout), or an unregistered unit folder | warning | | | |
 | every external sim is pinned to a tag, not a branch | ✓ | | | |
 | every `[[tools]]` entry has a repo and is pinned to a tag, not a branch | ✓ | ✓ | | |
-| holds no research: no `question`, `[corpus]`, `RESEARCH.md`, `EXPERIMENTS.md`, `experiments/` | | | | ✓ |
+| holds no research: no `question`, `[corpus]`, `RESEARCH.md`, `EXPERIMENTS.md`, `experiments/`, `preregistrations/` | | | | ✓ |
 | `CHANGELOG.md` and `CITATION.cff` exist; one `X.Y.Z` version across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and a `CHANGELOG.md` heading | | | | ✓ |
 | every consumer has a `name`, a `repo` and a non-empty `uses` | | | | ✓ |
 | the corpus is not a submodule | ✓ | ✓ | | ✓ |
@@ -341,7 +441,7 @@ It exits nonzero on any failure, so it can gate CI. Warnings are printed and do 
 
 ---
 
-## 12. Keeping repos current
+## 15. Keeping repos current
 
 This section is advice about the tool, not rules `check` enforces.
 
@@ -373,7 +473,8 @@ automatically; `check` names them and a person does them.
 The rules are drawn from practice written up in: Noble (2009) on organising a computational project;
 Wilson et al. (2014, 2017) on scientific computing practice; Sandve et al. (2013) on reproducible
 computational research; Nosek et al. (2018) on preregistration; Gould et al. (2026) on adaptive
-preregistration for model-based research; and Barker et al. (2022) on research software as a citable
-output. **No published protocol for laying out a whole research programme across repositories was
-found**, so the split into studies, sims and a shared corpus is our own extrapolation from those, and it
-should be read as one.
+preregistration for model-based research; Barker et al. (2022) on research software as a citable output;
+Milo et al. (2010) on curated biological numbers with their sources (BioNumbers); and Le Novère et al.
+(2005) on the minimum description of a quantitative model (MIRIAM). **No published protocol for laying out
+a whole research programme across repositories was found**, so the split into studies, work types and a
+shared corpus is our own extrapolation from those, and it should be read as one.

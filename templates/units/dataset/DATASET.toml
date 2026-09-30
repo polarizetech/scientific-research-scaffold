@@ -1,0 +1,15 @@
+slug = "{{slug}}"
+question = "{{question}}"
+status = "candidate"      # candidate | selected | fetched. Selected and fetched need everything below.
+
+# Where the data lives, as a dataset-fetch reference. The raw data is never committed; it is fetched.
+provider = ""             # e.g. "openneuro"
+accession = ""            # e.g. "ds004024"
+version = ""              # the pinned snapshot, never "latest"
+licence = ""              # e.g. "CC0-1.0"; the data keeps its own licence
+url = ""                  # landing page or DOI
+files = []                # the files used; empty means all
+
+[selection]
+# Why this dataset, written down before it is selected: what it must contain to answer the question.
+criteria = []

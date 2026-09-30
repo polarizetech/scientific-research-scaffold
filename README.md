@@ -11,7 +11,7 @@ studies, simulators and tools in that shape and checks existing ones against it.
 | | a **study** | a **sim** | a **tool** |
 |---|---|---|---|
 | is | one research question, and everything used to pursue it | one simulator, under adaptive preregistration | one job done for other repos: an instrument, a recorder, a service, a library |
-| holds | versioned exploratory apps, sims still in development, preregistered experiments, dataset pins | the model, its experiments, its assumptions | the tool, and the list of repos that depend on it and what they use |
+| holds | apps, sims still in development, datasets and calculators, each preregistered where it predicts | the model, its preregistrations, its assumptions | the tool, and the list of repos that depend on it and what they use |
 | versions | `apps/v1-*`, `apps/v2-*` folders, and tags | `model-vX.Y.Z` tags, all in one repo | `vX.Y.Z` tags, one version said the same everywhere |
 | findings go to | the shared research corpus, referenced by claim ID | the same | none: a tool holds no research |
 

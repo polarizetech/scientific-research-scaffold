@@ -8,7 +8,7 @@ profile = "{{profile}}"
 # The one version. pyproject.toml, CITATION.cff and CHANGELOG.md say the same, and `scaffold check`
 # fails when they differ. 0.0.0 means nothing is released yet.
 version = "0.0.0"
-# A tool holds no research: no question, no [corpus], no experiments.
+# A tool holds no research: no question, no [corpus], no preregistrations.
 
 # One entry per repo that depends on this tool, with what it relies on. A change to anything in
 # `uses` breaks a consumer this repo cannot test: name it under `### Outputs changed` in

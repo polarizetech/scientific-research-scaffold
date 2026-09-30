@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Work types replace `experiments/`.** A study is built from apps, sims, datasets, calculators and tools
+  (PROTOCOL.md § 5), each with its own folder, entry requirement and way of writing back to research.
+  `scaffold new dataset` creates `datasets/<slug>/` (a dataset-fetch reference pinned to a version, selection
+  criteria, `analysis/`); `scaffold new calculator` creates `calculators/<slug>/` (`CALCULATOR.md`,
+  `reference.csv`). Preregistrations live in the unit they test, `<unit>/preregistrations/<EID>/`, listed in
+  `EXPERIMENTS.md`; sims use `preregistrations/` too. `check` enforces a selected dataset's pinned reference
+  and licence, and calculator reference values from PROBE on; `experiments/`, `data/manifest.json` and
+  unregistered unit folders are warnings. PROTOCOL.md sections from Apps on are renumbered.
 - **The agents moved to their own repo**, [scientific-research-agents](https://github.com/polarizetech/scientific-research-agents),
   included as a submodule at `agents/` pinned to `v0.1.0`: the briefs, the coordination protocol, discipline
   briefs, prices and the usage tool. `scaffold usage` passes through to its `bin/agents usage`. The

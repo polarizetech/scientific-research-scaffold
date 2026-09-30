@@ -31,10 +31,17 @@ not break any of them, so adoption is **additive first, moves later**.
 ### A tool
 
 For a repo that does a job for other repos rather than asking a question, the manifest is `TOOL.toml`
-(PROTOCOL.md § 7). Adopting it usually means **moving research out**: measurements, validation write-ups,
+(PROTOCOL.md § 8). Adopting it usually means **moving research out**: measurements, validation write-ups,
 `EXPERIMENTS.md` and `experiments/` go to the study that made them, which records them against the tool
 release it used. Then make the version agree across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and
 `CHANGELOG.md`, and list each repo that depends on the tool under `[[consumers]]` with what it `uses`.
+
+### Work-type folders
+
+A study that has an `experiments/` folder or a `data/manifest.json` keeps them where they are. `check` warns
+about both, as the old layout, and nothing more. New preregistrations go in the unit they test
+(`<unit>/preregistrations/<EID>/`); new datasets get `scaffold new dataset`. Move an old experiment only when
+it is worth doing, one commit per move, and keep it listed in `EXPERIMENTS.md` either way.
 
 ## 2. Earlier preregistrations stay frozen
 

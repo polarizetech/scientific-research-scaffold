@@ -6,6 +6,8 @@
   scaffold new sim <name> --question "..." [--inside STUDY]
   scaffold new tool <name> --job "..."
   scaffold new app <slug> --question "..." [--study PATH]
+  scaffold new dataset <slug> --question "..." [--study PATH]
+  scaffold new calculator <slug> --question "what it computes" [--study PATH]
   scaffold promote-sim <study>/sims/<slug>
   scaffold check [PATH]
   scaffold status [PATH ...]
@@ -81,10 +83,13 @@ OWNED = {
 }
 STAGES = ("SKETCH", "PROBE", "BENCH", "SHIPPED")
 APP_STATUSES = ("active", "superseded", "abandoned")
+DATASET_STATUSES = ("candidate", "selected", "fetched")
+#: Work types that live as folders in a study and are registered in STUDY.toml (PROTOCOL.md, "Work types").
+UNITS = {"dataset": "datasets", "calculator": "calculators"}
 VISIBILITIES = ("public", "private")
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
-#: What makes a repo research. A tool holds none of it (PROTOCOL.md § 7).
-RESEARCH_FILES = ("RESEARCH.md", "EXPERIMENTS.md", "experiments")
+#: What makes a repo research. A tool holds none of it (PROTOCOL.md § 8).
+RESEARCH_FILES = ("RESEARCH.md", "EXPERIMENTS.md", "experiments", "preregistrations")
 UNDECIDED = "undecided"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 #: Kind prefixes the protocol retires (PROTOCOL.md § 1). The kind belongs in the manifest.
@@ -436,7 +441,7 @@ def write_licence(dest, profile):
         f"Code: {code} (LICENSES/{code}.txt)\n"
         f"Text, figures and documentation: {docs} (LICENSES/{docs}.txt)\n\n"
         f"Copyright (c) {year} {author}\n\n"
-        f"Third-party data keeps its own licence; see data/manifest.json.\n", encoding="utf-8")
+        f"Third-party data keeps its own licence, recorded with each dataset in datasets/.\n", encoding="utf-8")
 
 
 def find_kit_ap(explicit, profile):
@@ -485,10 +490,10 @@ def append_toml(path, block):
 # ------------------------------------------------------------------------------------------ new
 
 def cmd_new(a):
-    if a.kind == "app":
+    if a.kind in ("app", *UNITS):
         if not a.question:
-            raise Fail("an app needs --question")
-        return new_app(a)
+            raise Fail(f"a {a.kind} needs --question")
+        return new_app(a) if a.kind == "app" else new_unit(a)
     check_name(a.name)
     inside = Path(a.inside).resolve() if getattr(a, "inside", None) else None
     if a.kind in ("study", "tool") and inside:
@@ -539,7 +544,7 @@ def cmd_new(a):
     code, _, err = git("commit", "-q", "-m", f"Scaffold {a.kind} {a.name} (scientific-research-scaffold)", cwd=dest)
     if code:
         print(f"  ! initial commit failed: {err}")
-    # A tool runs no experiments, so it takes the kit's defaults and not the profile's experiment modules.
+    # A tool preregisters nothing, so it takes the kit's defaults and not the profile's preregistration modules.
     install_kit(dest, profile, find_kit_ap(a.kit_ap, profile), extra=[] if a.kind == "tool" else None)
     write_agents_block(dest, a.kind, v, profile)
     git("add", "AGENTS.md", cwd=dest)
@@ -580,6 +585,25 @@ def new_app(a):
     print(f"created app {dest}\n  run: python3 {dest.relative_to(study)}/serve.py")
 
 
+def new_unit(a):
+    """A dataset or calculator folder in a study, registered in STUDY.toml."""
+    study = Path(a.study).resolve()
+    manifest_path = study / "STUDY.toml"
+    if not manifest_path.exists():
+        raise Fail(f"{study} has no STUDY.toml; a {a.kind} belongs to a study")
+    check_name(a.name)
+    m = load_toml(manifest_path)
+    folder = UNITS[a.kind]
+    dest = study / folder / a.name
+    if dest.exists():
+        raise Fail(f"{dest} already exists")
+    profile = load_profile(profile_name(a.profile, m))
+    v = template_vars(profile, m.get("name", study.name), a.question, slug=a.name)
+    render(TEMPLATES / "units" / a.kind, dest, v)
+    append_toml(manifest_path, f"[[{folder}]]\nslug = {toml_str(a.name)}\npath = {toml_str(f'{folder}/{a.name}')}")
+    print(f"created {a.kind} {dest}\n  registered in {manifest_path}")
+
+
 # -------------------------------------------------------------------------------- promote-sim
 
 def cmd_promote(a):
@@ -609,7 +633,7 @@ def cmd_promote(a):
     pname = m.get("profile") or os.environ.get("SCAFFOLD_PROFILE")
     org = load_profile(pname).get("org", "<org>") if pname else "<org>"
     print(f"""
-promoted to {dest}, with history. Remaining, in order (PROTOCOL.md § 6):
+promoted to {dest}, with history. Remaining, in order (PROTOCOL.md § 7):
   1. In {dest}: add the repo-level files a standalone sim owes (LICENSE, CLAUDE.md, CITATION.cff,
      pyproject.toml, CI); `scaffold check {dest}` lists what is missing. Install the prereg kit.
   2. Decide visibility and record it in SIM.toml (visibility, visibility_decided), then:
@@ -730,6 +754,20 @@ def check_repo(root, rep, nested=False, profile_override=None):
             if rep.ok(path.exists(), f"{label}: {path.relative_to(root)} does not exist"):
                 rep.ok(any(path.glob("index.html")) or any(path.glob("*/index.html")),
                        f"{label}: no index.html in {path.relative_to(root)}", warn=True)
+        for d in m.get("datasets", []):
+            check_dataset(root, d, rep)
+        for c in m.get("calculators", []):
+            check_calculator(root, c, m.get("stage"), rep)
+        for kind, folder in UNITS.items():
+            listed = {u.get("path", f"{folder}/{u.get('slug')}") for u in m.get(folder, [])}
+            for d in sorted(p for p in (root / folder).glob("*") if p.is_dir()):
+                rep.ok(d.relative_to(root).as_posix() in listed,
+                       f"{d.relative_to(root)} is not registered in STUDY.toml under [[{folder}]]", warn=True)
+        rep.ok(not (root / "experiments").is_dir(),
+               "experiments/ is the old layout: preregistrations now live in the unit they test "
+               "(<unit>/preregistrations/<EID>/); list an existing folder's path in STUDY.toml until it moves", warn=True)
+        rep.ok(not (root / "data" / "manifest.json").exists(),
+               "data/manifest.json is the old layout: each dataset now has datasets/<slug>/DATASET.toml", warn=True)
         for s in m.get("sims", []):
             slug = s.get("slug", "?")
             if "repo" in s:
@@ -761,6 +799,42 @@ def check_repo(root, rep, nested=False, profile_override=None):
                 continue
     rep.ok(not hits, f"{len(hits)} absolute home-directory path(s): " + ", ".join(hits[:5])
            + (" ..." if len(hits) > 5 else ""), warn=True)
+
+
+def check_dataset(root, d, rep):
+    """A dataset analysis: its reference pinned to a version, with a licence, once it is selected."""
+    slug = d.get("slug", "?")
+    path = root / d.get("path", f"datasets/{slug}")
+    if not rep.ok((path / "DATASET.toml").exists(), f"dataset {slug}: {path.relative_to(root)}/DATASET.toml is missing"):
+        return
+    try:
+        ds = load_toml(path / "DATASET.toml")
+    except Exception as e:  # noqa: BLE001 - reported, not fatal
+        rep.ok(False, f"dataset {slug}: DATASET.toml does not parse: {e}")
+        return
+    status = ds.get("status")
+    if not rep.ok(status in DATASET_STATUSES, f"dataset {slug}: status must be one of {', '.join(DATASET_STATUSES)}"):
+        return
+    if status != "candidate":
+        for key in ("provider", "accession", "licence"):
+            rep.ok(bool(ds.get(key)), f"dataset {slug}: a {status} dataset needs {key}")
+        version = str(ds.get("version", ""))
+        rep.ok(bool(version) and version.lower() not in ("latest", "main", "master", "head"),
+               f"dataset {slug}: a {status} dataset is pinned to a version, not {version or 'nothing'}")
+        rep.ok(bool(ds.get("selection", {}).get("criteria")),
+               f"dataset {slug}: record the selection criteria before selecting it")
+
+
+def check_calculator(root, c, stage, rep):
+    """A calculator: its maths written down, and reference values its tests run."""
+    slug = c.get("slug", "?")
+    path = root / c.get("path", f"calculators/{slug}")
+    if not rep.ok((path / "CALCULATOR.md").exists(), f"calculator {slug}: {path.relative_to(root)}/CALCULATOR.md is missing"):
+        return
+    ref = path / "reference.csv"
+    rows = [r for r in ref.read_text(encoding="utf-8").splitlines()[1:] if r.strip()] if ref.exists() else []
+    rep.ok(bool(rows), f"calculator {slug}: reference.csv has no reference values"
+           + ("" if stage == "SKETCH" else " (required from PROBE on)"), warn=(stage == "SKETCH"))
 
 
 def check_tool(root, m, rep):
@@ -1081,7 +1155,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("new", help="create a study, a sim, or an app inside a study")
-    n.add_argument("kind", choices=("study", "sim", "tool", "app"))
+    n.add_argument("kind", choices=("study", "sim", "tool", "app", *UNITS))
     n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
     n.add_argument("--question", "-q", help="the question it asks (or what a sim simulates)")
     n.add_argument("--job", "-j", help="for a tool: what it does for the repos that use it")
@@ -1090,7 +1164,7 @@ def main(argv=None):
                    help="record a visibility decision already made (default: left undecided; check fails until set)")
     n.add_argument("--dir", default=".", help="parent directory for a new repo")
     n.add_argument("--inside", help="create the sim inside this study (sims/<name>)")
-    n.add_argument("--study", default=".", help="for `new app`: the study to add it to")
+    n.add_argument("--study", default=".", help="for an app, dataset or calculator: the study to add it to")
     n.add_argument("--kit-ap", help="path to kit_ap or a checkout of the prereg kit")
     n.add_argument("--no-git", action="store_true", help="do not git init, commit, or install the kit")
     n.set_defaults(fn=cmd_new)
