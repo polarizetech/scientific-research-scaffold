@@ -16,7 +16,7 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
-## Unreleased
+## v0.4.0
 
 **`scaffold update` does:**
 - adds or refreshes the agents (now from scientific-research-agents, including the new `scout` and

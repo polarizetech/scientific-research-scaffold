@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 (2026-09-30)
 
+- Generated CI checks out `v0.4.0`; `update` moves existing repos' CI to it, and `UPGRADING.md` says what else to do.
 - **Repos notice new releases.** `UPGRADING.md` says, per release, what `scaffold update` does and what a
   session does by hand. `scaffold version` compares a repo's recorded release with the current one (and with
   GitHub's latest) and prints the steps in between; a session hook in `.claude/settings.json` runs it when a
