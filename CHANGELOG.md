@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 (2026-09-30)
 
+- Needs adaptive-preregistration v0.5.0 or later, whose `tool-scope` applies to tool repositories.
+- Generated CI checks out `v0.5.0`.
 - **Tools are scoped.** `new tool` installs the profile's `[prereg] tool_modules` (`tool-scope`) in place of its
   preregistration modules, so a tool's claim, features and every scientific feature's evidence and decision are
   settled with the person first (`SCOPE.toml` at the root; kit `tool-scope` now applies to tool repositories).

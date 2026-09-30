@@ -16,12 +16,13 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
-## Unreleased
+## v0.5.0
 
-**`scaffold update` does:** nothing new; this release changes what new tools get.
+**`scaffold update` does:** moves the CI ref to `v0.5.0`; otherwise nothing new, since this release
+changes what new tools get.
 
 **The session does:**
-- **Tool repos get `tool-scope`.** Update the preregistration kit (`.agents/bin/kit_ap update`), then
+- **Tool repos get `tool-scope`.** Update the preregistration kit to v0.5.0 or later (`.agents/bin/kit_ap update`), then
   `.agents/bin/kit_ap add tool-scope`. Scoping then applies to the tool itself, with its record at `SCOPE.toml`
   in the root. For a tool that is already built, and especially one at SHIPPED, ask the person whether to scope
   it now or only its next scientific change; don't write its claim or decisions for them.
