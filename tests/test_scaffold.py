@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
@@ -467,66 +468,13 @@ class Scaffold(unittest.TestCase):
 
     # ---------------------------------------------------------------------------------- usage
 
-    def logs(self, repo):
-        """Fake Claude Code and Codex logs for `repo`: one Claude response written as three lines (as
-        Claude Code does), one old response, one response elsewhere, and two Codex responses."""
-        claude, codex = self.tmp / "claude", self.tmp / "codex"
-        os.environ["CLAUDE_CONFIG_DIR"], os.environ["CODEX_HOME"] = str(claude), str(codex)
-        self._env.setdefault("CLAUDE_CONFIG_DIR", None)
-        self._env.setdefault("CODEX_HOME", None)
-        now = scaffold._dt.datetime.now(scaffold._dt.timezone.utc)
-        recent, old = (now - scaffold._dt.timedelta(days=1)).isoformat(), (now - scaffold._dt.timedelta(days=30)).isoformat()
-
-        def line(msg_id, ts, cwd, model="claude-opus-5-5", out=1_000_000):
-            return scaffold.json.dumps({"timestamp": ts, "cwd": cwd, "requestId": "r" + msg_id, "message": {
-                "id": msg_id, "model": model, "usage": {
-                    "input_tokens": 0, "output_tokens": out, "cache_read_input_tokens": 1_000_000,
-                    "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 1_000_000}}}})
-        (claude / "projects" / "p").mkdir(parents=True)
-        (claude / "projects" / "p" / "s.jsonl").write_text("\n".join([
-            line("a", recent, str(repo)), line("a", recent, str(repo)), line("a", recent, str(repo)),
-            line("b", old, str(repo)),
-            line("c", recent, str(repo / ".claude" / "worktrees" / "wt"), model="claude-haiku-4-5"),
-            line("d", recent, "/elsewhere"),
-        ]) + "\n")
-        (codex / "sessions" / "2026").mkdir(parents=True)
-        rl = {"primary": {"used_percent": 26.0, "window_minutes": 300}, "secondary": {"used_percent": 65.0, "window_minutes": 10080}}
-        (codex / "sessions" / "2026" / "s.jsonl").write_text("\n".join(scaffold.json.dumps(r) for r in [
-            {"timestamp": recent, "type": "turn_context", "payload": {"cwd": str(repo), "model": "gpt-x"}},
-            {"timestamp": recent, "type": "token_usage_record", "payload": {"response_id": "x1", "usage": {
-                "input_tokens": 1000, "cached_input_tokens": 800, "output_tokens": 50}}},
-            {"timestamp": recent, "type": "token_usage_record", "payload": {"response_id": "x2", "usage": {
-                "input_tokens": 2000, "cached_input_tokens": 1500, "output_tokens": 70}}},
-            {"timestamp": recent, "type": "event_msg", "payload": {"type": "token_count", "rate_limits": rl}},
-        ]) + "\n")
-
-    def test_usage_counts_each_response_once(self):
-        repo = self.study()
-        self.logs(repo)
-        rows = list(scaffold.claude_usage("2000"))
-        self.assertEqual(len(rows), 4)  # a, b, c, d: the three lines of "a" are one response
-        per, total, _ = scaffold.tally(scaffold.claude_usage(
-            (scaffold._dt.datetime.now(scaffold._dt.timezone.utc) - scaffold._dt.timedelta(days=7)).isoformat()),
-            [os.path.realpath(repo)])
-        e = per[os.path.realpath(repo)]
-        self.assertEqual(e["n"], 2)  # "a" and the worktree's "c"; "b" is too old, "d" is elsewhere
-        # a: 1M out at $20 + 1M cache read at $0.20 + 1M 1-hour write at 2 x $4; c: $5 + $0.10 + $2
-        self.assertAlmostEqual(e["cost"], 20 + 0.2 + 8 + 5 + 0.1 + 2)
-        self.assertEqual(total["n"], 3)
-
-    def test_usage_reports_codex_and_its_plan(self):
-        repo = self.study()
-        self.logs(repo)
-        rows, limits = scaffold.codex_usage("2000")
-        rows = list(rows)
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(sum(t["cache_read"] for _, _, t in rows), 2300)
-        self.assertEqual(sum(t["input"] for _, _, t in rows), 700)
-        self.assertEqual(limits["secondary"][1], 65.0)
-        code, out = run("usage", str(repo))
-        self.assertEqual(code, 0, out)
-        self.assertIn("weekly window (10080 min): 65% used", out)
-        self.assertRegex(out, r"colony\s+2\s")
+    def test_usage_passes_through_to_the_agents_tool(self):
+        env = {**os.environ, "CLAUDE_CONFIG_DIR": str(self.tmp / "none"), "CODEX_HOME": str(self.tmp / "none")}
+        r = subprocess.run([sys.executable, str(ROOT / "bin" / "scaffold"), "usage", str(self.tmp), "--days", "3"],
+                           capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Claude Code, last 3 day(s)", r.stdout)
+        self.assertIn("no sessions found", r.stdout)
 
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):
@@ -594,7 +542,6 @@ class Scaffold(unittest.TestCase):
                             {**scaffold.template_vars({}, "x", "Does it?"), "job": "Does a job",
                              "visibility": "private", "visibility_decided": "2026-01-01"})
         for p in [*sorted((ROOT / "profiles").glob("*.toml")), ROOT / "tests" / "fixtures" / "multiline.toml",
-                  ROOT / "agents" / "prices.toml",
                   *sorted(rendered.glob("*/*.toml"))]:
             text = p.read_text(encoding="utf-8")
             self.assertEqual(scaffold._mini_toml(text, p), tomllib.loads(text), p.name)

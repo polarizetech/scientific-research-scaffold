@@ -27,5 +27,5 @@ Hand each task to the specialist in `.claude/agents/` whose description fits, an
 
 Disciplines the researcher, analyst and writer draw on are in `.claude/disciplines.md`.
 Agents hand back in 150 words or fewer, and run in parallel only on independent work
-([coordination protocol](https://github.com/polarizetech/scientific-research-scaffold/blob/main/agents/COORDINATION.md)).
+([coordination protocol](https://github.com/polarizetech/scientific-research-agents/blob/{{agents_ref}}/COORDINATION.md)).
 `scaffold usage` shows what this repo's sessions cost.

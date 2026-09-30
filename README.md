@@ -29,7 +29,7 @@ Studies and sims build on four other pieces, named in a **profile** so the proto
 ## Quick start
 
 ```bash
-git clone https://github.com/polarizetech/scientific-research-scaffold.git
+git clone --recurse-submodules https://github.com/polarizetech/scientific-research-scaffold.git
 git clone https://github.com/polarizetech/adaptive-preregistration.git   # found automatically as a sibling
 cd ~/code
 export SCAFFOLD_PROFILE=example   # or your own; there is no built-in default (see below)
@@ -66,7 +66,12 @@ frontend developer, a researcher, an analyst and a science writer. A sim, which 
 or frontend developer. A session hands each task to the one whose description fits. Each agent starts on
 a cheap model and is escalated on a signal, and agents pass short handoffs, not transcripts
 ([`agents/COORDINATION.md`](agents/COORDINATION.md)). Codex gets the same roles through a section of
-`AGENTS.md`. `scaffold usage` shows what each repo actually costs. See [`agents/README.md`](agents/README.md).
+`AGENTS.md`. `scaffold usage` shows what each repo actually costs. The agents live in their own repo,
+[scientific-research-agents](https://github.com/polarizetech/scientific-research-agents), included here as a
+submodule pinned to a tag: clone with `--recurse-submodules`, or run `git submodule update --init`.
+
+`skills/new-study/` is a Claude Code skill for creating and adopting studies with this scaffold: copy it to
+`~/.claude/skills/` (for you) or `.claude/skills/` (for one repo).
 
 ### Keeping repos current
 

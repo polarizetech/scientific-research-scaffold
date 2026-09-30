@@ -38,8 +38,10 @@ KINDS = ("study", "sim", "tool")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
 SCAFFOLD_REF = "v0.3.0"
 LOCK = ".scaffold.lock"
+#: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
+#: AGENTS.md section. `git submodule update --init` fetches it.
 AGENTS_DIR = HERE / "agents"
-#: The specialist agents each kind gets, from templates/agents/. A sim has no UI, so no UI agents.
+#: The specialist agents each kind gets, from scientific-research-agents. A sim has no UI, so no UI agents.
 AGENTS = {
     "study": ("scout", "computational-engineer", "mathematician", "designer", "frontend-developer", "researcher",
               "analyst", "science-writer"),
@@ -287,6 +289,7 @@ def template_vars(profile, name, question, **extra):
         "design_css": ds.get("css", "design.css"),
         "design_js_tag": f'<script type="module" src="design/{ds["js"]}"></script>' if ds.get("js") else "",
         "scaffold_ref": SCAFFOLD_REF,
+        "agents_ref": agents_ref(),
         "design_system": f"`{ds['repo']}`" if ds.get("repo") else
                          "not named in this repo's profile: ask the user which one to use before designing",
         "conventions": "\n".join(f"- {c}" for c in profile.get("agents", {}).get("conventions", [])) or
@@ -295,6 +298,13 @@ def template_vars(profile, name, question, **extra):
     }
     v.update(extra)
     return v
+
+
+def agents_ref():
+    try:
+        return "v" + (AGENTS_DIR / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        raise Fail(f"{AGENTS_DIR} is empty: run `git submodule update --init` in {HERE}") from None
 
 
 def discipline_briefs(names):
@@ -311,9 +321,12 @@ def discipline_briefs(names):
 
 
 def template_path(kind, rel):
-    """Where the template for a file the scaffold owns lives: the kind's own, or the shared agents."""
-    own = TEMPLATES / kind / rel
-    return own if own.exists() else TEMPLATES / "agents" / rel
+    """Where the template for a file the scaffold owns lives: the kind's own, or scientific-research-agents'."""
+    if rel.startswith(".claude/agents/"):
+        return AGENTS_DIR / "agents" / Path(rel).name
+    if rel == ".claude/disciplines.md":
+        return AGENTS_DIR / "templates" / "disciplines.md"
+    return TEMPLATES / kind / rel
 
 
 def agent_vars(variables, rel, profile):
@@ -347,7 +360,7 @@ def agents_block(kind, variables, profile):
     codex = profile.get("agents", {}).get("codex", {})
     models = (f"use `{codex['default_model']}`" if codex.get("default_model") else "use the configured default model") + \
         (f", and `{codex['escalation_model']}` when escalating" if codex.get("escalation_model") else "")
-    body = fill((TEMPLATES / "agents" / "AGENTS.block.md").read_text(encoding="utf-8"), {
+    body = fill((AGENTS_DIR / "templates" / "AGENTS.block.md").read_text(encoding="utf-8"), {
         **variables,
         "agent_roster": "| role | takes | brief |\n|---|---|---|\n" + roster,
         "codex_routing": f"{models}. Reasoning effort low for finding and summarising, medium by default, high "
@@ -876,6 +889,8 @@ def past_renderings(kind, rel, m, pname):
     template and profile. A file matching one of them was never edited, so `update` may replace it.
     Needs this scaffold's git history; without it, nothing matches and files are treated as edited."""
     tpath = template_path(kind, rel).relative_to(HERE).as_posix()
+    if tpath.startswith("agents/"):  # the submodule's history isn't this repo's; the lock covers these
+        return set()
     code, out, _ = git("rev-list", "--all", "--", tpath, f"profiles/{pname}.toml", cwd=HERE)
     if code:
         return set()
@@ -1050,173 +1065,13 @@ def cmd_status(a):
 
 # -------------------------------------------------------------------------------------- usage
 
-TOKEN_KINDS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
-
-
-def project_of(cwd):
-    """The repo a session ran in: its working directory, with worktrees counted as their repo."""
-    if not cwd:
-        return "?"
-    return os.path.realpath(str(cwd).split("/.claude/worktrees/")[0])
-
-
-def read_jsonl(path):
-    try:
-        with open(path, encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                try:
-                    yield json.loads(line)
-                except ValueError:
-                    continue
-    except OSError:
-        return
-
-
-def claude_usage(since):
-    """Token use per (project, model) from Claude Code's transcripts, each API response counted once.
-
-    One response is written as several transcript lines, each repeating its usage, so responses are
-    keyed by message and request id; summing lines would count most tokens several times over."""
-    root = Path(os.environ.get("CLAUDE_CONFIG_DIR", "~/.claude")).expanduser() / "projects"
-    responses = {}
-    for f in root.rglob("*.jsonl"):
-        for r in read_jsonl(f):
-            m = r.get("message") if isinstance(r.get("message"), dict) else {}
-            u = m.get("usage")
-            if not u or str(r.get("timestamp", "")) < since or not m.get("model") or m["model"].startswith("<"):
-                continue
-            cc = u.get("cache_creation") or {}
-            w5, w1 = cc.get("ephemeral_5m_input_tokens"), cc.get("ephemeral_1h_input_tokens")
-            if w5 is None and w1 is None:
-                w5, w1 = u.get("cache_creation_input_tokens") or 0, 0
-            responses[(m.get("id"), r.get("requestId"))] = (project_of(r.get("cwd")), m["model"], {
-                "input": u.get("input_tokens") or 0, "output": u.get("output_tokens") or 0,
-                "cache_write_5m": w5 or 0, "cache_write_1h": w1 or 0,
-                "cache_read": u.get("cache_read_input_tokens") or 0})
-    return responses.values()
-
-
-def codex_usage(since):
-    """Token use per (project, model) from Codex's session logs, one record per response, and the plan's
-    latest rate-limit windows."""
-    root = Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser() / "sessions"
-    responses, limits = {}, {}
-    for f in sorted(root.rglob("*.jsonl")):
-        cwd, model = "?", "?"
-        for r in read_jsonl(f):
-            p = r.get("payload") if isinstance(r.get("payload"), dict) else {}
-            ts = str(r.get("timestamp", ""))
-            if r.get("type") == "turn_context":
-                cwd, model = p.get("cwd") or cwd, p.get("model") or model
-            elif r.get("type") == "token_usage_record" and ts >= since:
-                u = p.get("usage") or {}
-                cached = u.get("cached_input_tokens") or 0
-                responses[p.get("response_id") or (f, ts)] = (project_of(cwd), model, {
-                    "input": max((u.get("input_tokens") or 0) - cached, 0), "output": u.get("output_tokens") or 0,
-                    "cache_write_5m": u.get("cache_write_input_tokens") or 0, "cache_write_1h": 0,
-                    "cache_read": cached})
-            elif p.get("type") == "token_count" and p.get("rate_limits"):
-                for w in ("primary", "secondary"):
-                    x = p["rate_limits"].get(w) or {}
-                    if x and ts >= limits.get(w, ("",))[0]:
-                        limits[w] = (ts, x.get("used_percent"), x.get("window_minutes"))
-    return responses.values(), limits
-
-
-def load_prices():
-    table = load_toml(AGENTS_DIR / "prices.toml")
-    return table, {m["id"]: m for m in table.get("model", [])}
-
-
-def api_cost(model, t, table, prices):
-    """What these tokens would cost at API rates, or None for a model with no price."""
-    p = next((v for k, v in prices.items() if model == k or model.startswith(k + "-")), None)
-    if p is None:
-        return None
-    c = table.get("cache", {})
-    return (t["input"] * p["input"] + t["output"] * p["output"] + t["cache_read"] * p["cache_read"]
-            + t["cache_write_5m"] * p["input"] * c.get("write_5m", 1.25)
-            + t["cache_write_1h"] * p["input"] * c.get("write_1h", 2.0)) / 1e6
-
-
-def tally(rows, wanted):
-    """Per project: responses, tokens by kind, cost, and the most-used model; plus the grand total."""
-    table, prices = load_prices()
-    out, total = {}, {"n": 0, "tokens": 0, "cost": 0.0}
-    for project, model, t in rows:
-        cost = api_cost(model, t, table, prices)
-        total["n"] += 1
-        total["tokens"] += sum(t.values())
-        total["cost"] += cost or 0
-        key = next((w for w in wanted if project == w or project.startswith(w + "/")), None)
-        if key is None:
-            continue
-        e = out.setdefault(key, {"n": 0, "t": dict.fromkeys(TOKEN_KINDS, 0), "cost": 0.0, "unpriced": 0,
-                                 "models": {}})
-        e["n"] += 1
-        for k in TOKEN_KINDS:
-            e["t"][k] += t[k]
-        e["models"][model] = e["models"].get(model, 0) + sum(t.values())
-        if cost is None:
-            e["unpriced"] += 1
-        else:
-            e["cost"] += cost
-    return out, total, table.get("as_of", "?")
-
-
-def human(n):
-    return (f"{n / 1e9:.1f}B" if n >= 1e9 else f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k" if n >= 500
-            else str(n))
-
-
 def cmd_usage(a):
-    days = a.days
-    since = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
-    claude_rows = list(claude_usage(since))
-    codex_rows, limits = codex_usage(since)
-    codex_rows = list(codex_rows)
-    if a.all:
-        wanted = sorted({p for p, _, _ in [*claude_rows, *codex_rows]})
-    else:
-        wanted = [str(Path(p).resolve()) for p in (a.paths or ["."])]
-    scale = 30 / days
-
-    def table(title, rows, priced):
-        per, total, as_of = tally(rows, wanted)
-        print(f"\n{title}, last {days} day(s)" + (f"; API-equivalent at agents/prices.toml rates ({as_of})" if priced else ""))
-        if not total["n"]:
-            print("  no sessions found")
-            return
-        head = ["repo", "responses", "output", "cache read", "cache write", "share"] + (["API $", "$/month"] if priced else []) + ["mostly"]
-        lines = [head]
-        for key, e in sorted(per.items(), key=lambda kv: -(kv[1]["cost"] or sum(kv[1]["t"].values()))):
-            t = e["t"]
-            share = sum(t.values()) / total["tokens"] if total["tokens"] else 0
-            row = [Path(key).name, str(e["n"]), human(t["output"]), human(t["cache_read"]),
-                   human(t["cache_write_5m"] + t["cache_write_1h"]), f"{share:.0%}"]
-            if priced:
-                row += [f"{e['cost']:,.0f}" + ("*" if e["unpriced"] else ""), f"{e['cost'] * scale:,.0f}"]
-            lines.append(row + [max(e["models"], key=e["models"].get)])
-        widths = [max(len(r[i]) for r in lines) for i in range(len(head))]
-        for r in lines:
-            print("  " + "  ".join(c.rjust(w) if 0 < i < len(head) - 1 else c.ljust(w)
-                                   for i, (c, w) in enumerate(zip(r, widths))))
-        if priced:
-            print(f"  all projects: ${total['cost']:,.0f} (about ${total['cost'] * scale:,.0f} a month at this pace)")
-        if priced and any(e["unpriced"] for e in per.values()):
-            print("  * some responses used a model with no price in agents/prices.toml; they are left out of $")
-        return total
-
-    table("Claude Code", claude_rows, priced=True)
-    print("  On a Claude subscription this is scale, not a bill; the plan's limits are shown by /usage in Claude Code.")
-    table("Codex", codex_rows, priced=False)
-    for w, label in (("primary", "short window"), ("secondary", "weekly window")):
-        if w in limits:
-            ts, pct, mins = limits[w]
-            print(f"  plan {label} ({mins} min): {pct:.0f}% used as of {ts[:16].replace('T', ' ')} UTC")
-    if limits:
-        print("  A repo's share of Codex tokens is a fair estimate of its share of the plan's usage.")
-    return 0
+    """Tokens and cost per repo: scientific-research-agents' `usage`, which this passes through to."""
+    tool = AGENTS_DIR / "bin" / "agents"
+    if not tool.exists():
+        raise Fail(f"{tool} is missing: run `git submodule update --init` in {HERE}")
+    args = [*(a.paths or ["."]), "--days", str(a.days), *(["--all"] if a.all else [])]
+    return subprocess.run([sys.executable, str(tool), "usage", *args]).returncode
 
 
 # --------------------------------------------------------------------------------------- main

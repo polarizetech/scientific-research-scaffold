@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The agents moved to their own repo**, [scientific-research-agents](https://github.com/polarizetech/scientific-research-agents),
+  included as a submodule at `agents/` pinned to `v0.1.0`: the briefs, the coordination protocol, discipline
+  briefs, prices and the usage tool. `scaffold usage` passes through to its `bin/agents usage`. The
+  `new-study` skill moved to `skills/`. Clone with `--recurse-submodules`.
 - **Agent coordination.** [`agents/COORDINATION.md`](agents/COORDINATION.md): one lead delegates, agents pass
   150-word handoffs instead of transcripts, parallel work only for independent tasks (at most three, each in
   its own worktree), agent teams only for tight back-and-forth, and the science gate never skipped.
