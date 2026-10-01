@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.6.0 (2026-10-01)
+
+- Needs adaptive-preregistration v0.7.0 or later. Generated CI checks out `v0.6.0`.
+- New tools start at `0.1.0`, in preparation (an undated changelog heading), so `release-check` and `check` agree.
+- **Tools use kit v0.7.0.** `new tool` installs `tool-versioning` (releases: annotated tags, outputs changed, consumers,
+  `release-check`) in place of the profile's preregistration modules; `prereg`, a kit default, now scopes the tool
+  claim first (`tool-scope` was merged into it). A tool's override experiments are preregistered in the research
+  corpus. `check` warns while a tool with the scope protocol has no `SCOPE.toml`.
+
 ## v0.5.1 (2026-09-30)
 
 - **Adopted repos stay adopted.** `.scaffold.lock` records `"adopted": true` for a repo that took up the scaffold

@@ -11,7 +11,7 @@ projects_dir = "projects"
 [prereg]
 repo = "polarizetech/adaptive-preregistration"
 modules = ["experiment-pr-log"]
-tool_modules = ["tool-scope"]
+tool_modules = ["tool-versioning"]
 
 [design]
 repo = "polarizetech/polarize-ui"

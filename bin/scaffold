@@ -39,7 +39,7 @@ PROFILES = HERE / "profiles"
 
 KINDS = ("study", "sim", "tool")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.5.1"
+SCAFFOLD_REF = "v0.6.0"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
@@ -579,8 +579,8 @@ def cmd_new(a):
     code, _, err = git("commit", "-q", "-m", f"Scaffold {a.kind} {a.name} (scientific-research-scaffold)", cwd=dest)
     if code:
         print(f"  ! initial commit failed: {err}")
-    # A tool preregisters nothing: it takes the profile's tool modules (tool-scope: scope the tool with the person
-    # before building anything scientific) instead of its preregistration modules.
+    # A tool preregisters nothing: it takes the profile's tool modules (tool-versioning) instead of its
+    # preregistration modules. The kit's defaults include prereg, which scopes the tool claim first.
     tool_modules = profile.get("prereg", {}).get("tool_modules", [])
     install_kit(dest, profile, find_kit_ap(a.kit_ap, profile), extra=tool_modules if a.kind == "tool" else None)
     write_agents_block(dest, a.kind, v, profile)
@@ -881,7 +881,7 @@ def check_tool(root, m, rep):
         mods = json.loads((root / ".agents" / "kit_ap.lock").read_text()).get("modules", [])
     except (OSError, ValueError):
         mods = []
-    if "tool-scope" in mods:
+    if (root / ".agents" / "protocols" / "SCOPE_PROTOCOL.md").exists() or "tool-scope" in mods:
         rep.ok((root / "SCOPE.toml").exists(), "unscoped: no SCOPE.toml yet; scope the tool with the person before "
                "building anything scientific (.agents/protocols/SCOPE_PROTOCOL.md)", warn=True)
     for f in RESEARCH_FILES:

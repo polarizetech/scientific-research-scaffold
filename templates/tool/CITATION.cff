@@ -3,7 +3,7 @@ message: "If you use this tool, please cite it as below."
 title: "{{name}}"
 abstract: "{{job}}"
 type: software
-version: 0.0.0
+version: 0.1.0
 authors:
   - name: "{{author}}"
 license:

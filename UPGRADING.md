@@ -16,6 +16,20 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.6.0
+
+**`scaffold update` does:** moves the CI ref to `v0.6.0`; nothing else new, since this release changes what new tools get.
+
+**The session does:**
+- **Update the preregistration kit to v0.7.0 or later** (`.agents/bin/kit_ap update`). `tool-scope` is merged
+  into `prereg` (kit 0.6.0), so a repo that had it drops it and keeps scoping; skip v0.5.0's "add `tool-scope`"
+  step. Every unit now starts with a claim (`SCOPE.toml`).
+- **Tool repos add `tool-versioning`** (`.agents/bin/kit_ap add tool-versioning`) and run
+  `python3 .agents/tools/release-check`. Fix what it reports with the person: a released version with no tag
+  gets its tag only if the person confirms the release; research it finds in the tool moves to the research
+  repo, with their go-ahead.
+- **A tool's override experiments** are preregistered in the research corpus, linked from its `SCOPE.toml`.
+
 ## v0.5.1
 
 **`scaffold update` does:** moves the CI ref to `v0.5.1`, and keeps `"adopted": true` in the lock of a repo

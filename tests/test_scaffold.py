@@ -146,7 +146,7 @@ class Scaffold(unittest.TestCase):
     def test_new_tool_passes_check(self):
         repo = self.tool()
         m = scaffold.load_toml(repo / "TOOL.toml")
-        self.assertEqual((m["kind"], m["job"], m["version"]), ("tool", "Records a signal", "0.0.0"))
+        self.assertEqual((m["kind"], m["job"], m["version"]), ("tool", "Records a signal", "0.1.0"))
         self.assertNotIn("question", m)
         for research in scaffold.RESEARCH_FILES:
             self.assertFalse((repo / research).exists(), research)
@@ -155,8 +155,8 @@ class Scaffold(unittest.TestCase):
 
     def test_scoped_tool_warns_until_it_has_a_scope_record(self):
         repo = self.tool()
-        (repo / ".agents").mkdir(exist_ok=True)
-        (repo / ".agents" / "kit_ap.lock").write_text('{"modules": ["core", "prereg", "tool-scope"]}')
+        (repo / ".agents" / "protocols").mkdir(parents=True, exist_ok=True)
+        (repo / ".agents" / "protocols" / "SCOPE_PROTOCOL.md").write_text("# scope\n")  # prereg, kit 0.6+
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
         self.assertIn("unscoped: no SCOPE.toml yet", out)
@@ -192,15 +192,15 @@ class Scaffold(unittest.TestCase):
     def test_tool_version_is_said_once(self):
         repo = self.tool()
         manifest = repo / "TOOL.toml"
-        manifest.write_text(manifest.read_text().replace('version = "0.0.0"', 'version = "0.2.0"'))
+        manifest.write_text(manifest.read_text().replace('version = "0.1.0"', 'version = "0.2.0"'))
         code, out = run("check", str(repo))
         self.assertEqual(code, 1)
-        for needle in ("pyproject.toml says version 0.0.0, TOOL.toml says 0.2.0",
-                       "CITATION.cff says version 0.0.0, TOOL.toml says 0.2.0",
+        for needle in ("pyproject.toml says version 0.1.0, TOOL.toml says 0.2.0",
+                       "CITATION.cff says version 0.1.0, TOOL.toml says 0.2.0",
                        "CHANGELOG.md has no heading for version 0.2.0"):
             self.assertIn(needle, out)
         for f in ("pyproject.toml", "CITATION.cff"):
-            (repo / f).write_text((repo / f).read_text().replace("0.0.0", "0.2.0"))
+            (repo / f).write_text((repo / f).read_text().replace("0.1.0", "0.2.0"))
         with (repo / "CHANGELOG.md").open("a") as f:
             f.write("\n## [0.2.0] (2026-09-29)\n")
         code, out = run("check", str(repo))
