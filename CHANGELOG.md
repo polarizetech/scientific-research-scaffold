@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Pins scientific-research-agents v0.1.2: its coordination protocol points at the kit's scope protocol in `prereg`.
+
 ## v0.6.0 (2026-10-01)
 
 - Needs adaptive-preregistration v0.7.0 or later. Generated CI checks out `v0.6.0`.
