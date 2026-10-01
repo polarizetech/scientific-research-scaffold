@@ -1,8 +1,15 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 (2026-10-01)
 
-- Pins scientific-research-agents v0.1.2: its coordination protocol points at the kit's scope protocol in `prereg`.
+- Pins scientific-research-agents v0.2.0, with provider-neutral role bodies and Claude Code subagent
+  frontmatter retained as an adapter.
+- Makes `AGENTS.md` the shared instruction surface for Claude, ChatGPT, Codex and other repository-aware
+  assistants. Per-kind scientific rules now live in its scaffold-managed block; new `CLAUDE.md` files import
+  it without duplication, while existing Claude customizations remain untouched.
+- Packages `new-study` as a portable ChatGPT/Codex skills-only plugin and documents Claude and Codex skill
+  installation separately.
+- Generated CI checks out `v0.7.0`.
 
 ## v0.6.0 (2026-10-01)
 

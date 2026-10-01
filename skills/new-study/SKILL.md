@@ -5,6 +5,9 @@ description: Set up a new research study, simulator or tool repo with scientific
 
 # New study or sim
 
+Explicit user instructions take precedence over this workflow. This skill needs filesystem and shell access
+to the target checkout; if they are unavailable, explain that boundary instead of pretending files were made.
+
 Follow `PROTOCOL.md` in scientific-research-scaffold. Find the scaffold checkout first (a sibling of the
 current repo, or ask); never guess a home-directory path.
 

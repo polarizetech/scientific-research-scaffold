@@ -112,8 +112,8 @@ working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
 ```
 <study>/
   README.md            title, kind line, the question, how to run it
-  CLAUDE.md            "@AGENTS.md", then anything specific to this study
-  AGENTS.md            instructions every coding assistant reads (managed by the prereg kit)
+  CLAUDE.md            "@AGENTS.md", the Claude Code adapter
+  AGENTS.md            shared instructions for repository-aware assistants (managed in marked sections)
   STUDY.toml           the manifest (§ 2)
   RESEARCH.md          which corpus project and claim IDs this study bears on
   EXPERIMENTS.md       the register of every preregistration, wherever it lives (the prereg kit's)
@@ -127,7 +127,7 @@ working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
   calculators/<slug>/  the study's mathematics as tested code (§ 10)
   shared/workbench.py  the one resolver for workbench tools (§ 4)
   .agents/             the prereg kit's protocols and tools
-  .claude/agents/      specialist agents: engineer, designer, frontend, researcher, analyst, writer
+  .claude/agents/      specialist role briefs: scout, engineer, mathematician, designer, frontend, researcher, analyst, writer
   .claude/disciplines.md   the research disciplines those agents draw on, from the profile
 ```
 
@@ -481,7 +481,8 @@ it, and every repo notices:
   a session does by hand, with the person's go-ahead where a decision is theirs.
 - **Each repo records its release** in `.scaffold.lock`.
 - **Each session checks.** A session hook in `.claude/settings.json` runs `scaffold version` when a Claude
-  Code session starts; the scaffold section of `AGENTS.md` tells Codex and other assistants to run it. When
+  Code session starts; the scaffold section of `AGENTS.md` tells ChatGPT, Codex and other repository-aware
+  assistants to run it. When
   the repo is behind, it prints the upgrade notes in between, and the session offers to do the upgrade. It
   also says when the local scaffold checkout is behind the latest release on GitHub.
 

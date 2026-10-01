@@ -16,6 +16,16 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.7.0
+
+**`scaffold update` does:** moves the CI ref to `v0.7.0`; refreshes the specialist briefs from
+scientific-research-agents v0.2.0; and adds the repo kind's scientific rules to the scaffold-managed section
+of `AGENTS.md`, so Claude Code, ChatGPT, Codex and other repository-aware assistants receive the same rules.
+
+**The session does:** nothing. Existing `CLAUDE.md` files remain untouched and continue to import
+`AGENTS.md`; newly scaffolded repositories use a one-line `CLAUDE.md` adapter. No Claude Code agent, routing,
+or session hook is removed.
+
 ## v0.6.0
 
 **`scaffold update` does:** moves the CI ref to `v0.6.0`; nothing else new, since this release changes what new tools get.

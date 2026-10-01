@@ -62,17 +62,24 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 
 ### Agents
 
-Every repo gets specialist agents in `.claude/agents/`: a scout, a computational engineer, a designer, a
+Every repo gets specialist role briefs in `.claude/agents/`: a scout, a computational engineer, a designer, a
 frontend developer, a researcher, an analyst and a science writer. A sim, which has no UI, gets no designer
-or frontend developer. A session hands each task to the one whose description fits. Each agent starts on
-a cheap model and is escalated on a signal, and agents pass short handoffs, not transcripts
-([`agents/COORDINATION.md`](agents/COORDINATION.md)). Codex gets the same roles through a section of
-`AGENTS.md`. `scaffold usage` shows what each repo actually costs. The agents live in their own repo,
+or frontend developer. Claude Code discovers them as subagents; ChatGPT, Codex and other repository-aware
+assistants read the same briefs through `AGENTS.md` and can apply them in the current session when subagents
+are unavailable. Each agent starts on a cheap model and is escalated on a signal, and agents pass short handoffs, not transcripts
+([`agents/COORDINATION.md`](agents/COORDINATION.md)). `scaffold usage` shows what each repo actually costs.
+The agents live in their own repo,
 [scientific-research-agents](https://github.com/polarizetech/scientific-research-agents), included here as a
 submodule pinned to a tag: clone with `--recurse-submodules`, or run `git submodule update --init`.
 
-`skills/new-study/` is a Claude Code skill for creating and adopting studies with this scaffold: copy it to
-`~/.claude/skills/` (for you) or `.claude/skills/` (for one repo).
+`skills/new-study/` is a portable skill for creating and adopting studies with this scaffold. Install the
+whole repository as a skills-only plugin in ChatGPT or Codex, or copy the skill to the host's skill folder:
+
+- Claude Code: `~/.claude/skills/new-study/` or `.claude/skills/new-study/`.
+- Codex: `~/.codex/skills/new-study/` or `.codex/skills/new-study/`.
+
+Plain ChatGPT does not operate on an unconnected local checkout. Use the plugin in a workspace with local
+repository access, or use Codex for the filesystem and shell steps.
 
 ### Keeping repos current
 

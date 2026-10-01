@@ -35,11 +35,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]
 TEMPLATES = HERE / "templates"
+AGENT_RULES = HERE / "agent-rules"
 PROFILES = HERE / "profiles"
 
 KINDS = ("study", "sim", "tool")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.6.0"
+SCAFFOLD_REF = "v0.7.0"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
@@ -377,9 +378,11 @@ def agents_block(kind, variables, profile):
         (f", and `{codex['escalation_model']}` when escalating" if codex.get("escalation_model") else "")
     body = fill((AGENTS_DIR / "templates" / "AGENTS.block.md").read_text(encoding="utf-8"), {
         **variables,
+        "repo_rules": fill((AGENT_RULES / f"{kind}.md").read_text(encoding="utf-8"), variables,
+                           f"agent-rules/{kind}.md"),
         "agent_roster": "| role | takes | brief |\n|---|---|---|\n" + roster,
-        "codex_routing": f"{models}. Reasoning effort low for finding and summarising, medium by default, high "
-                         f"or xhigh when escalating.",
+        "codex_routing": f"{models}. Use low reasoning effort for finding and summarising, medium by default, "
+                         f"and a higher effort supported by the selected model when escalating.",
     }, "AGENTS.block.md")
     return f"{BLOCK_START}\n{body.rstrip()}\n{SESSION_NOTE}\n{BLOCK_END}\n"
 

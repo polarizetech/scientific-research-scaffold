@@ -70,6 +70,15 @@ class Scaffold(unittest.TestCase):
         fake_kit(repo)
         return repo
 
+    def test_chatgpt_codex_plugin_matches_the_scaffold_release(self):
+        portable = scaffold.json.loads((ROOT / "plugin.json").read_text())
+        codex = scaffold.json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text())
+        self.assertEqual(portable["name"], "scientific-research-scaffold")
+        self.assertEqual(portable["version"], scaffold.SCAFFOLD_REF.removeprefix("v"))
+        self.assertEqual(codex["version"], portable["version"])
+        self.assertEqual(codex["skills"], "./skills/")
+        self.assertTrue((ROOT / "skills" / "new-study" / "SKILL.md").exists())
+
     def test_new_study_passes_check(self):
         repo = self.study()
         self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
@@ -463,8 +472,18 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(text.count(scaffold.BLOCK_START), 1)
         for agent in scaffold.AGENTS["study"]:
             self.assertIn(f"`.claude/agents/{agent}.md`", text)
+        self.assertIn("No run that could be quoted", text)
+        self.assertEqual((repo / "CLAUDE.md").read_text(), "@AGENTS.md\n")
         self.assertIn("gpt-5.6-sol", text)
         self.assertNotIn("{{", text)
+
+    def test_each_kind_puts_its_shared_rules_in_agents_md(self):
+        study, tool = self.study(), self.tool()
+        self.assertEqual(run("new", "sim", "memory", "-q", "Tape", "--dir", str(self.tmp), "--profile", "example",
+                             "--visibility", "public", "--no-git")[0], 0)
+        self.assertIn("Preregistrations live in the unit", (study / "AGENTS.md").read_text())
+        self.assertIn("A model change is a new tag", (self.tmp / "memory" / "AGENTS.md").read_text())
+        self.assertIn("No research here", (tool / "AGENTS.md").read_text())
 
     def test_update_refreshes_only_the_scaffold_section(self):
         repo = self.study()
