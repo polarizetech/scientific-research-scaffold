@@ -16,6 +16,14 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## Unreleased
+
+**`scaffold update` does:** moves the CI ref; nothing else new.
+
+**The session does:** nothing for existing studies, sims and tools. A repo that is really a workbench (many
+projects, general tools, no single question) can adopt the kind: add `WORKBENCH.toml`, list its private
+folders, and create or register its studies with `scaffold new study --inside .`
+
 ## v0.7.0
 
 **`scaffold update` does:** moves the CI ref to `v0.7.0`; refreshes the specialist briefs from

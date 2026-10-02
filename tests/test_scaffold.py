@@ -122,7 +122,7 @@ class Scaffold(unittest.TestCase):
         repo = self.study()
         code, out = run("new", "sim", "inner", "-q", "Sim", "--inside", str(repo), "--visibility", "public")
         self.assertEqual(code, 1)
-        self.assertIn("shares the study's visibility", out)
+        self.assertIn("shares its visibility", out)
 
     def test_there_is_no_default_profile(self):
         code, out = run("new", "study", "orphan", "-q", "?", "--dir", str(self.tmp), "--no-git")
@@ -182,9 +182,6 @@ class Scaffold(unittest.TestCase):
                         "--no-git")
         self.assertEqual(code, 1)
         self.assertIn("needs --question", out)
-        code, out = run("new", "tool", "inner", "-j", "Records", "--inside", str(self.study()))
-        self.assertEqual(code, 1)
-        self.assertIn("always its own repo", out)
 
     def test_tool_holds_no_research(self):
         repo = self.tool()
@@ -654,6 +651,71 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(self.plan(repo)[".claude/settings.json"], "missing")
         self.assertEqual(run("update", str(repo), "--apply", "--adopt", ".claude/settings.json")[0], 0)
         self.assertIn(scaffold.HOOK_MARK, (repo / ".claude" / "settings.json").read_text())
+
+    # ------------------------------------------------------------------------------- workbench
+
+    def workbench(self, name="bench", visibility="private"):
+        code, out = run("new", "workbench", name, "-q", "How the senses reach attention and memory",
+                        "--dir", str(self.tmp), "--profile", "example", "--visibility", visibility, "--no-git")
+        self.assertEqual(code, 0, out)
+        repo = self.tmp / name
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        fake_kit(repo)
+        return repo
+
+    def test_workbench_holds_studies_and_general_units(self):
+        bench = self.workbench()
+        self.assertEqual(run("check", str(bench))[0], 0)
+        code, out = run("new", "study", "hearing", "-q", "Does it?", "--inside", str(bench))
+        self.assertEqual(code, 0, out)
+        study = bench / "studies" / "hearing"
+        self.assertTrue((study / "STUDY.toml").exists())
+        for shared in (".github", "Makefile", "LICENSE", ".scaffold.lock", "CLAUDE.md", ".git", ".claude"):
+            self.assertFalse((study / shared).exists(), shared)  # the workbench's, not the study's
+        self.assertIn('[[studies]]\nslug = "hearing"\npath = "studies/hearing"', (bench / "WORKBENCH.toml").read_text())
+
+        self.assertEqual(run("new", "app", "tone-explorer", "-q", "Hear it?", "--study", str(study))[0], 0)
+        self.assertEqual(run("new", "sim", "cochlea", "-q", "A filterbank", "--inside", str(study))[0], 0)
+        self.assertEqual(run("new", "tool", "level-meter", "-j", "Reads a level", "--inside", str(study))[0], 0)
+        self.assertEqual(run("new", "dataset", "assr", "-q", "40 Hz?", "--study", str(study))[0], 0)
+        self.assertEqual(run("new", "tool", "plotter", "-j", "Plots", "--inside", str(bench))[0], 0)  # general
+        self.assertEqual(run("new", "sim", "tissue", "-q", "General", "--inside", str(bench))[0], 0)
+        self.assertIn('path = "tools/level-meter"', (study / "STUDY.toml").read_text())
+        self.assertTrue((bench / "tools" / "plotter" / "README.md").exists())
+        code, out = run("check", str(bench))
+        self.assertEqual(code, 0, out)
+
+    def test_workbench_checks_the_studies_inside_it(self):
+        bench = self.workbench()
+        self.assertEqual(run("new", "study", "hearing", "-q", "Does it?", "--inside", str(bench))[0], 0)
+        manifest = bench / "studies" / "hearing" / "STUDY.toml"
+        manifest.write_text(manifest.read_text().replace('stage = "SKETCH"', 'stage = "DONE"')
+                            + '\n[[tools]]\nslug = "gone"\npath = "tools/gone"\n')
+        (bench / "studies" / "stray").mkdir()
+        code, out = run("check", str(bench))
+        self.assertEqual(code, 1)
+        for needle in ("hearing: stage 'DONE'", "hearing: tool gone: tools/gone does not exist",
+                       "studies/stray is not registered"):
+            self.assertIn(needle, out)
+
+    def test_workbench_with_private_folders_must_be_private(self):
+        bench = self.workbench("open-bench", visibility="public")
+        (bench / "recordings").mkdir()
+        m = bench / "WORKBENCH.toml"
+        m.write_text(m.read_text().replace("private = []", 'private = ["recordings", "absent"]'))
+        code, out = run("check", str(bench))
+        self.assertEqual(code, 1)
+        self.assertIn("visibility must be 'private'", out)
+        self.assertIn("private folder 'absent' does not exist", out)
+
+    def test_what_goes_inside_what(self):
+        bench, study = self.workbench(), self.study()
+        for args, needle in ((["study", "s2", "-q", "?", "--inside", str(study)], "goes --inside a workbench"),
+                             (["workbench", "w2", "-q", "?", "--inside", str(bench)], "always its own repo"),
+                             (["sim", "s3", "-q", "?", "--inside", str(self.tmp)], "no STUDY.toml or WORKBENCH.toml")):
+            code, out = run("new", *args)
+            self.assertEqual(code, 1, args)
+            self.assertIn(needle, out)
 
     def test_prefixed_names_are_refused(self):
         for bad in ("lab-reef-acoustics", "sim-sound-propagation", "Study", "x"):

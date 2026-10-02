@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **The workbench kind.** `WORKBENCH.toml`: one repo holding general `tools/`, `sims/` and `apps/` and one folder
+  per study. `scaffold new workbench` creates one; `new study --inside <workbench>` creates a study that shares
+  the repo's kit, agents, CI and licence; `new tool|sim --inside <study or workbench>` adds units to either. A
+  workbench has no one stage or corpus project, may mount the corpus as a submodule, and declares its
+  `private` folders, which requires a private repo. `check` on a workbench checks every study it lists.
+- A study may hold its own tools (`[[tools]]` with a `path`); a tool inside a study is a unit, not a tool repo.
+
 ## v0.7.0 (2026-10-01)
 
 - Pins scientific-research-agents v0.2.0, with provider-neutral role bodies and Claude Code subagent

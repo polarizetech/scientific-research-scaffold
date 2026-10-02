@@ -3,7 +3,9 @@
 """scaffold: create studies, sims and apps in the shape PROTOCOL.md describes, and check existing repos.
 
   scaffold new study <name> --question "..." [--profile NAME] [--visibility public|private] [--dir PARENT]
-  scaffold new sim <name> --question "..." [--inside STUDY]
+  scaffold new workbench <name> --question "the theme"
+  scaffold new study <name> --question "..." --inside WORKBENCH
+  scaffold new sim <name> --question "..." [--inside STUDY|WORKBENCH]
   scaffold new tool <name> --job "..."
   scaffold new app <slug> --question "..." [--study PATH]
   scaffold new dataset <slug> --question "..." [--study PATH]
@@ -38,7 +40,9 @@ TEMPLATES = HERE / "templates"
 AGENT_RULES = HERE / "agent-rules"
 PROFILES = HERE / "profiles"
 
-KINDS = ("study", "sim", "tool")
+KINDS = ("study", "sim", "tool", "workbench")
+#: Kinds that hold units (apps, sims, tools, datasets, calculators), and so can be given to --inside.
+CONTAINERS = ("study", "workbench")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
 SCAFFOLD_REF = "v0.7.0"
 LOCK = ".scaffold.lock"
@@ -52,6 +56,8 @@ AGENTS = {
     "sim": ("scout", "computational-engineer", "mathematician", "researcher", "analyst", "science-writer"),
     "tool": ("scout", "computational-engineer", "mathematician", "designer", "frontend-developer", "researcher",
              "analyst", "science-writer"),
+    "workbench": ("scout", "computational-engineer", "mathematician", "designer", "frontend-developer", "researcher",
+                  "analyst", "science-writer"),
 }
 #: Each agent's starting model and effort (agents/COORDINATION.md: start cheap, escalate on a signal). A
 #: profile overrides any of them in [agents.routing], as "model" or "model:effort".
@@ -106,7 +112,7 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 #: Kind prefixes the protocol retires (PROTOCOL.md § 1). The kind belongs in the manifest.
 KIND_PREFIXES = ("lab-", "sim-", "study-", "case-", "exp-")
 BRANCH_REFS = ("", "main", "master", "HEAD", "develop", "dev", "trunk")
-KIND_LINE_RE = re.compile(r"\*\*Kind:\*\*\s*(study|sim|tool)\b(?:.*?\*\*Stage:\*\*\s*([A-Z]+))?")
+KIND_LINE_RE = re.compile(r"\*\*Kind:\*\*\s*(study|sim|tool|workbench)\b(?:.*?\*\*Stage:\*\*\s*([A-Z]+))?")
 ABS_PATH_RE = re.compile(r"(?<![\w.])(/Users/[A-Za-z0-9_.-]+/|/home/[a-z0-9_.-]+/)")
 #: Tracked files that are records, not instructions: an absolute path in them is history, not a bug.
 ABS_PATH_SKIP = re.compile(r"(\.jsonl$|provenance\.json$|(^|/)conversations/|(^|/)protocol/history/|^\.agents/|\.lock$)")
@@ -533,21 +539,23 @@ def cmd_new(a):
         return new_app(a) if a.kind == "app" else new_unit(a)
     check_name(a.name)
     inside = Path(a.inside).resolve() if getattr(a, "inside", None) else None
-    if a.kind in ("study", "tool") and inside:
-        raise Fail(f"--inside is for sims; a {a.kind} is always its own repo")
+    host = container(inside) if inside else None  # (kind, manifest path) of what --inside points at
+    if inside:
+        if a.kind == "workbench":
+            raise Fail("a workbench is always its own repo")
+        if a.kind == "study" and host[0] != "workbench":
+            raise Fail("a study goes --inside a workbench, or is its own repo")
     if a.kind == "tool":
         if not a.job or a.question:
             raise Fail("a tool has a --job (what it does for other repos), not a --question: it holds no research")
     elif not a.question:
         raise Fail(f"a {a.kind} needs --question")
     if inside and a.visibility:
-        raise Fail("--visibility is for a repo; a sim inside a study shares the study's visibility")
+        raise Fail(f"--visibility is for a repo; a {a.kind} inside a {host[0]} shares its visibility")
     if inside:
-        study_manifest = inside / "STUDY.toml"
-        if not study_manifest.exists():
-            raise Fail(f"{inside} has no STUDY.toml")
-        profile = load_profile(profile_name(a.profile, load_toml(study_manifest)))
-        dest = inside / "sims" / a.name
+        folder = {"study": "studies", "sim": "sims", "tool": "tools"}[a.kind]
+        profile = load_profile(profile_name(a.profile, load_toml(host[1])))
+        dest = inside / folder / a.name
     else:
         profile = load_profile(profile_name(a.profile))
         dest = Path(a.dir).resolve() / a.name
@@ -559,17 +567,21 @@ def cmd_new(a):
     skip = ()
     if a.kind == "study" and not profile.get("workbench", {}).get("repo"):
         skip = ("shared/workbench.py",)
-    if inside:  # a sim inside a study shares the study's repo-level files
-        skip = (".github", "Makefile", "CITATION.cff", "pyproject.toml", ".gitignore", "CLAUDE.md")
-    render(TEMPLATES / a.kind, dest, v, skip=skip)
-    if not inside:  # a sim inside a study uses the study's agents
+    if inside:  # it shares the repo-level files of what it is inside: CI, licence, the kit, the agents
+        skip = (".github", "Makefile", "CITATION.cff", "pyproject.toml", ".gitignore", "CLAUDE.md", "CHANGELOG.md",
+                "EXPERIMENTS.md", "shared", "TOOL.toml")
+    if inside and a.kind == "tool":  # a tool inside a study or workbench is a unit, not a tool repo
+        v["slug"] = a.name
+        render(TEMPLATES / "units" / "tool", dest, v)
+    else:
+        render(TEMPLATES / a.kind, dest, v, skip=skip)
+    if not inside:
         render_agents(dest, a.kind, v, profile)
     print(f"created {a.kind} {dest}")
 
     if inside:
-        append_toml(inside / "STUDY.toml",
-                    f'[[sims]]\nslug = {toml_str(a.name)}\npath = {toml_str(f"sims/{a.name}")}')
-        print(f"  registered in {inside / 'STUDY.toml'}")
+        append_toml(host[1], f'[[{folder}]]\nslug = {toml_str(a.name)}\npath = {toml_str(f"{folder}/{a.name}")}')
+        print(f"  registered in {host[1]}")
         return
     write_licence(dest, profile)
     write_lock(dest, a.kind, profile)
@@ -601,11 +613,18 @@ def cmd_new(a):
               f"then  gh repo create {org}/{a.name} --<public|private> --source {dest} --push")
 
 
+def container(path):
+    """(kind, manifest path) of the study or workbench at `path`."""
+    for kind in CONTAINERS:
+        manifest = Path(path) / f"{kind.upper()}.toml"
+        if manifest.exists():
+            return kind, manifest
+    raise Fail(f"{path} has no STUDY.toml or WORKBENCH.toml")
+
+
 def new_app(a):
     study = Path(a.study).resolve()
-    manifest_path = study / "STUDY.toml"
-    if not manifest_path.exists():
-        raise Fail(f"{study} has no STUDY.toml; apps belong to studies")
+    _, manifest_path = container(study)
     check_name(a.name)
     m = load_toml(manifest_path)
     profile = load_profile(profile_name(a.profile, m))
@@ -629,9 +648,7 @@ def new_app(a):
 def new_unit(a):
     """A dataset or calculator folder in a study, registered in STUDY.toml."""
     study = Path(a.study).resolve()
-    manifest_path = study / "STUDY.toml"
-    if not manifest_path.exists():
-        raise Fail(f"{study} has no STUDY.toml; a {a.kind} belongs to a study")
+    _, manifest_path = container(study)
     check_name(a.name)
     m = load_toml(manifest_path)
     folder = UNITS[a.kind]
@@ -705,7 +722,8 @@ class Report:
 def check_repo(root, rep, nested=False, profile_override=None):
     root = Path(root).resolve()
     manifests = [k for k in KINDS if (root / f"{k.upper()}.toml").exists()]
-    if not rep.ok(len(manifests) == 1, f"{root.name}: exactly one of STUDY.toml / SIM.toml / TOOL.toml is required"):
+    if not rep.ok(len(manifests) == 1,
+                  f"{root.name}: exactly one of STUDY.toml / SIM.toml / TOOL.toml / WORKBENCH.toml is required"):
         return
     kind = manifests[0]
     try:
@@ -726,7 +744,8 @@ def check_repo(root, rep, nested=False, profile_override=None):
         rep.ok(bool(m.get("job")), "TOOL.toml has no job (what the tool does for the repos that use it)")
     else:
         rep.ok(bool(m.get("question")), f"{where}manifest has no question")
-    rep.ok(m.get("stage") in STAGES, f"{where}stage {m.get('stage')!r} is not one of {', '.join(STAGES)}")
+    if kind != "workbench":  # a workbench has no one stage: each study and unit in it has its own
+        rep.ok(m.get("stage") in STAGES, f"{where}stage {m.get('stage')!r} is not one of {', '.join(STAGES)}")
 
     readme = root / "README.md"
     if rep.ok(readme.exists(), f"{where}README.md is missing"):
@@ -749,43 +768,66 @@ def check_repo(root, rep, nested=False, profile_override=None):
     if kind == "sim":
         model = m.get("model", "model")
         rep.ok((root / model).exists(), f"{where}model path {model!r} does not exist (set model = in SIM.toml)")
-    if nested:
+    if nested and kind != "study":
         return
 
-    vis = m.get("visibility")
-    rep.ok(vis in VISIBILITIES,
-           f"visibility is undecided: decide it, then set visibility = 'public' or 'private' in {kind.upper()}.toml"
-           if vis in (None, "", UNDECIDED) else f"visibility must be 'public' or 'private', not {vis!r}")
-    rep.ok(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(m.get("visibility_decided", "")))),
-           "visibility_decided must be the date (YYYY-MM-DD) visibility was decided")
-    required = ("CLAUDE.md", "AGENTS.md", "LICENSE") + (
-        ("CHANGELOG.md", "CITATION.cff") if kind == "tool" else ("EXPERIMENTS.md", "RESEARCH.md"))
-    for f in required:
-        rep.ok((root / f).exists(), f"{f} is missing")
-    if kind == "tool":
-        check_tool(root, m, rep)
-    else:
-        lock = root / ".agents" / "kit_ap.lock"
-        if rep.ok(lock.exists(), "prereg kit not installed (.agents/kit_ap.lock missing): run kit_ap init"):
-            try:
-                mods = json.loads(lock.read_text()).get("modules", [])
-            except ValueError:
-                mods = []
-            rep.ok("prereg" in mods, "kit_ap.lock does not include the prereg module")
-        corpus = m.get("corpus", {}).get("project", "")
-        rep.ok(bool(corpus), "no corpus project named in the manifest ([corpus] project = ...)", warn=(kind == "sim"))
-        for t in m.get("tools", []):
-            ref = str(t.get("ref", ""))
-            rep.ok(bool(t.get("repo")), f"tool {t.get('slug', '?')}: no repo")
-            rep.ok(ref not in BRANCH_REFS and bool(re.search(r"\d", ref)),
-                   f"tool {t.get('slug', '?')}: must be pinned to a tag or commit, not {ref!r}")
-    gm = root / ".gitmodules"
-    corpus_repo = profile.get("corpus", {}).get("repo", "")
-    if gm.exists() and corpus_repo:
-        rep.ok(corpus_repo.lower() not in gm.read_text().lower(),
-               f"the corpus ({corpus_repo}) is a submodule; reference it by claim ID instead")
+    if not nested:
+        vis = m.get("visibility")
+        rep.ok(vis in VISIBILITIES,
+               f"visibility is undecided: decide it, then set visibility = 'public' or 'private' in {kind.upper()}.toml"
+               if vis in (None, "", UNDECIDED) else f"visibility must be 'public' or 'private', not {vis!r}")
+        rep.ok(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(m.get("visibility_decided", "")))),
+               "visibility_decided must be the date (YYYY-MM-DD) visibility was decided")
+        required = ("CLAUDE.md", "AGENTS.md") if kind == "workbench" else ("CLAUDE.md", "AGENTS.md", "LICENSE") + (
+            ("CHANGELOG.md", "CITATION.cff") if kind == "tool" else ("EXPERIMENTS.md", "RESEARCH.md"))
+        for f in required:
+            rep.ok((root / f).exists(), f"{f} is missing")
+        if kind == "tool":
+            check_tool(root, m, rep)
+        else:
+            lock = root / ".agents" / "kit_ap.lock"
+            if rep.ok(lock.exists(), "prereg kit not installed (.agents/kit_ap.lock missing): run kit_ap init"):
+                try:
+                    mods = json.loads(lock.read_text()).get("modules", [])
+                except ValueError:
+                    mods = []
+                rep.ok("prereg" in mods, "kit_ap.lock does not include the prereg module")
+            if kind != "workbench":  # a workbench's studies each name their own corpus project
+                corpus = m.get("corpus", {}).get("project", "")
+                rep.ok(bool(corpus), "no corpus project named in the manifest ([corpus] project = ...)",
+                       warn=(kind == "sim"))
+        gm = root / ".gitmodules"
+        corpus_repo = profile.get("corpus", {}).get("repo", "")
+        if gm.exists() and corpus_repo and kind != "workbench":  # a workbench may mount the corpus; nothing else does
+            rep.ok(corpus_repo.lower() not in gm.read_text().lower(),
+                   f"the corpus ({corpus_repo}) is a submodule; reference it by claim ID instead")
+        for rel in m.get("private", []):
+            rep.ok((root / rel).exists(), f"private folder {rel!r} does not exist")
+        rep.ok(not m.get("private") or vis == "private",
+               "this repo lists private folders, so visibility must be 'private'")
 
-    if kind == "study":
+    for t in m.get("tools", []) if kind in ("study", "sim", "workbench") else []:
+        slug = t.get("slug", "?")
+        if "path" in t:  # a tool that lives here, in this study or workbench
+            rep.ok((root / t["path"]).is_dir(), f"{where}tool {slug}: {t['path']} does not exist")
+        else:
+            ref = str(t.get("ref", ""))
+            rep.ok(bool(t.get("repo")), f"{where}tool {slug}: no repo")
+            rep.ok(ref not in BRANCH_REFS and bool(re.search(r"\d", ref)),
+                   f"{where}tool {slug}: must be pinned to a tag or commit, not {ref!r}")
+    if kind == "workbench":
+        listed = set()
+        for st in m.get("studies", []):
+            slug = st.get("slug", "?")
+            sp = root / st.get("path", f"studies/{slug}")
+            listed.add(sp.resolve())
+            if rep.ok((sp / "STUDY.toml").exists(), f"study {slug}: {sp.relative_to(root)}/STUDY.toml is missing"):
+                check_repo(sp, rep, nested=True, profile_override=pname)
+        for d in sorted(x for x in (root / "studies").glob("*") if x.is_dir()):
+            rep.ok(d.resolve() in listed, f"studies/{d.name} is not registered in WORKBENCH.toml under [[studies]]",
+                   warn=True)
+
+    if kind in CONTAINERS:
         for app in m.get("apps", []):
             ver, slug = str(app.get("version", "")), app.get("slug", "")
             label = f"app {ver}-{slug}"
@@ -799,12 +841,13 @@ def check_repo(root, rep, nested=False, profile_override=None):
             check_dataset(root, d, rep)
         for c in m.get("calculators", []):
             check_calculator(root, c, m.get("stage"), rep)
-        for kind, folder in UNITS.items():
+        for folder in UNITS.values():
             listed = {u.get("path", f"{folder}/{u.get('slug')}") for u in m.get(folder, [])}
             for d in sorted(p for p in (root / folder).glob("*") if p.is_dir()):
                 rep.ok(d.relative_to(root).as_posix() in listed,
-                       f"{d.relative_to(root)} is not registered in STUDY.toml under [[{folder}]]", warn=True)
-        rep.ok(not (root / "experiments").is_dir(),
+                       f"{where}{d.relative_to(root)} is not registered in {kind.upper()}.toml under [[{folder}]]",
+                       warn=True)
+        rep.ok(nested or kind == "workbench" or not (root / "experiments").is_dir(),
                "experiments/ is the old layout: preregistrations now live in the unit they test "
                "(<unit>/preregistrations/<EID>/); existing ones stay, listed in EXPERIMENTS.md (UPGRADING.md)", warn=True)
         rep.ok(not (root / "data" / "manifest.json").exists(),
@@ -822,6 +865,8 @@ def check_repo(root, rep, nested=False, profile_override=None):
                         check_repo(p, rep, nested=True, profile_override=pname)
                     else:
                         rep.ok(False, f"sim {slug}: {p.relative_to(root)} has no SIM.toml yet", warn=True)
+    if nested:
+        return
 
     code, out, _ = git("ls-files", cwd=root)
     hits = []
@@ -1290,7 +1335,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("new", help="create a study, a sim, or an app inside a study")
-    n.add_argument("kind", choices=("study", "sim", "tool", "app", *UNITS))
+    n.add_argument("kind", choices=("study", "sim", "tool", "workbench", "app", *UNITS))
     n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
     n.add_argument("--question", "-q", help="the question it asks (or what a sim simulates)")
     n.add_argument("--job", "-j", help="for a tool: what it does for the repos that use it")
@@ -1298,7 +1343,8 @@ def main(argv=None):
     n.add_argument("--visibility", choices=VISIBILITIES,
                    help="record a visibility decision already made (default: left undecided; check fails until set)")
     n.add_argument("--dir", default=".", help="parent directory for a new repo")
-    n.add_argument("--inside", help="create the sim inside this study (sims/<name>)")
+    n.add_argument("--inside", help="create it inside this study or workbench: a study inside a workbench; "
+                                    "a sim or tool inside either")
     n.add_argument("--study", default=".", help="for an app, dataset or calculator: the study to add it to")
     n.add_argument("--kit-ap", help="path to kit_ap or a checkout of the prereg kit")
     n.add_argument("--no-git", action="store_true", help="do not git init, commit, or install the kit")

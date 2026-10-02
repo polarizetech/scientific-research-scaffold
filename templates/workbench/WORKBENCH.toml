@@ -1,0 +1,16 @@
+kind = "workbench"
+name = "{{name}}"
+question = "{{question}}"            # the theme the work here serves; each study asks its own question
+visibility = "{{visibility}}"           # public | private, decided by a person
+visibility_decided = "{{visibility_decided}}"
+profile = "{{profile}}"
+
+# Folders that hold private data (recordings of people, anything with names). Listing one requires
+# visibility = "private", and `scaffold check` fails otherwise.
+private = []
+
+[corpus]
+project = ""                     # empty: each study names its own corpus project
+
+# Studies, and the general tools, sims and apps, are appended below by
+# `scaffold new study|tool|sim|app <name> --inside .`

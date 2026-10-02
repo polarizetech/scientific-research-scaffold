@@ -33,6 +33,7 @@ library. Nothing in it resolves a path on one person's machine.
 | **study** | one research question and everything used to pursue it | as tags and as `apps/vN-*` folders |
 | **sim** | one simulator, under adaptive preregistration | as `model-vX.Y.Z` tags inside one repo |
 | **tool** | one job done for other repos (an instrument, a recorder, a service, a library); no research | as `vX.Y.Z` tags inside one repo |
+| **workbench** | where work starts: general tools, sims and apps, and the studies that use them, in one repo | per unit; the workbench itself has no one stage |
 
 A profile fills five **roles** that studies and sims depend on but never contain. There is no default
 profile: `scaffold new` takes `--profile NAME` or `$SCAFFOLD_PROFILE`, and a study's manifest records which
@@ -194,6 +195,33 @@ The types feed each other through the research corpus, in both directions:
 
 Nothing an app shows is a finding. A finding comes from a preregistered prediction, in a sim, a dataset or a
 calculator (§ 11).
+
+### Where units live: a study's own repo, or a workbench
+
+A study can be its own repo, or a folder in a **workbench** (`WORKBENCH.toml`): one repo that holds what is
+general at the top and one folder per study.
+
+```
+<workbench>/
+  WORKBENCH.toml       the theme, visibility, private folders, and the register of studies
+  tools/  sims/  apps/ general, claim-agnostic units any study can use
+  studies/<name>/      a study: STUDY.toml, RESEARCH.md, and its own apps/ sims/ datasets/ calculators/ tools/
+  EXPERIMENTS.md  AGENTS.md  .agents/  CI  ...   shared by everything in the repo
+```
+
+- **General at the top, specific in the study.** A tool, sim or app that serves one study's question lives in
+  that study. When a second study needs it, it moves up to the workbench's `tools/`, `sims/` or `apps/`.
+- **A study in a workbench shares the repo's files**: the kit, the agents, CI, the licence. It has its own
+  manifest, research references and units. `scaffold new study <name> --inside <workbench>` creates one, and
+  `scaffold new tool|sim <name> --inside <study or workbench>` adds units to either.
+- **A workbench has no one stage and no one corpus project**: each study has its own.
+- **A workbench may mount the corpus** as a submodule, which nothing else may, because it is where the
+  corpus is worked on alongside everything that uses it.
+- **Private folders are declared.** `private = [...]` lists folders holding data about people; listing any
+  requires `visibility = "private"`.
+- **A study leaves for its own repo** when someone outside must see it without the rest, when it must stay
+  reproducible after the workbench moves on, or when it needs its own releases. Leaving is advice, not a
+  check.
 
 ### Adding a work type
 
@@ -442,6 +470,12 @@ and saying plainly what was not done.
 | every consumer has a `name`, a `repo` and a non-empty `uses` | | | | ✓ |
 | the corpus is not a submodule | ✓ | ✓ | | ✓ |
 | no absolute home-directory paths in tracked text files | warning | warning | warning | warning |
+
+A **workbench** is checked for: a valid manifest (no stage), the README kind line, decided visibility,
+`CLAUDE.md` and `AGENTS.md`, the prereg kit, private folders that exist and a private repo when any are
+listed, and every study it lists, each checked as a study minus the repo-level rows (unregistered
+`studies/` folders are a warning). A study's or workbench's in-repo tool (`[[tools]]` with a `path`) must
+exist.
 
 It exits nonzero on any failure, so it can gate CI. Warnings are printed and do not fail.
 
