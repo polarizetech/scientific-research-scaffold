@@ -44,7 +44,7 @@ KINDS = ("study", "sim", "tool", "workbench")
 #: Kinds that hold units (apps, sims, tools, datasets, calculators), and so can be given to --inside.
 CONTAINERS = ("study", "workbench")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.7.0"
+SCAFFOLD_REF = "v0.8.0"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
@@ -580,6 +580,10 @@ def cmd_new(a):
     print(f"created {a.kind} {dest}")
 
     if inside:
+        manifest = dest / f"{a.kind.upper()}.toml"
+        if manifest.exists():  # what it is inside decides visibility; the unit doesn't carry its own
+            kept = [ln for ln in manifest.read_text(encoding="utf-8").splitlines() if not ln.startswith("visibility")]
+            manifest.write_text("\n".join(kept) + "\n", encoding="utf-8")
         append_toml(host[1], f'[[{folder}]]\nslug = {toml_str(a.name)}\npath = {toml_str(f"{folder}/{a.name}")}')
         print(f"  registered in {host[1]}")
         return
@@ -838,9 +842,11 @@ def check_repo(root, rep, nested=False, profile_override=None):
                 rep.ok(any(path.glob("index.html")) or any(path.glob("*/index.html")),
                        f"{label}: no index.html in {path.relative_to(root)}", warn=True)
         for d in m.get("datasets", []):
-            check_dataset(root, d, rep)
+            if not adopted_unit(root, d, "datasets", "DATASET.toml", where, rep):
+                check_dataset(root, d, rep)
         for c in m.get("calculators", []):
-            check_calculator(root, c, m.get("stage"), rep)
+            if not adopted_unit(root, c, "calculators", "CALCULATOR.md", where, rep):
+                check_calculator(root, c, m.get("stage"), rep)
         for folder in UNITS.values():
             listed = {u.get("path", f"{folder}/{u.get('slug')}") for u in m.get(folder, [])}
             for d in sorted(p for p in (root / folder).glob("*") if p.is_dir()):
@@ -885,6 +891,20 @@ def check_repo(root, rep, nested=False, profile_override=None):
                 continue
     rep.ok(not hits, f"{len(hits)} absolute home-directory path(s): " + ", ".join(hits[:5])
            + (" ..." if len(hits) > 5 else ""), warn=True)
+
+
+def adopted_unit(root, entry, folder, manifest, where, rep):
+    """A unit that predates this layout (`adopted = true`): it must exist, and it owes its manifest the next
+    time it is worked on. Returns True when the entry is adopted, so the full check is skipped."""
+    if not entry.get("adopted"):
+        return False
+    slug = entry.get("slug", "?")
+    path = root / entry.get("path", f"{folder}/{slug}")
+    if rep.ok(path.is_dir(), f"{where}{folder[:-1]} {slug}: {path.relative_to(root)} does not exist"):
+        rep.ok((path / manifest).exists(),
+               f"{where}{folder[:-1]} {slug}: adopted from an earlier layout; add its {manifest} when it is next worked on",
+               warn=True)
+    return True
 
 
 def check_dataset(root, d, rep):

@@ -584,6 +584,21 @@ class Scaffold(unittest.TestCase):
                        "datasets/stray is not registered"):
             self.assertIn(needle, out)
 
+    def test_adopted_units_owe_their_manifest_later(self):
+        repo = self.study()
+        (repo / "datasets" / "old-analysis").mkdir(parents=True)
+        (repo / "calculators" / "old-maths").mkdir(parents=True)
+        with (repo / "STUDY.toml").open("a") as f:
+            f.write('\n[[datasets]]\nslug = "old-analysis"\npath = "datasets/old-analysis"\nadopted = true\n'
+                    '\n[[calculators]]\nslug = "old-maths"\npath = "calculators/old-maths"\nadopted = true\n'
+                    '\n[[datasets]]\nslug = "gone"\npath = "datasets/gone"\nadopted = true\n')
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)  # only the one that does not exist fails
+        self.assertIn("dataset gone: datasets/gone does not exist", out)
+        self.assertIn("dataset old-analysis: adopted from an earlier layout; add its DATASET.toml", out)
+        self.assertIn("calculator old-maths: adopted from an earlier layout; add its CALCULATOR.md", out)
+        self.assertNotIn("DATASET.toml is missing", out)
+
     def test_units_need_a_study_and_a_question(self):
         self.assertEqual(run("new", "dataset", "x-data", "--study", str(self.study()))[0], 1)
         self.assertEqual(run("new", "calculator", "x-calc", "-q", "?", "--study", str(self.tmp))[0], 1)
@@ -673,6 +688,7 @@ class Scaffold(unittest.TestCase):
         for shared in (".github", "Makefile", "LICENSE", ".scaffold.lock", "CLAUDE.md", ".git", ".claude"):
             self.assertFalse((study / shared).exists(), shared)  # the workbench's, not the study's
         self.assertIn('[[studies]]\nslug = "hearing"\npath = "studies/hearing"', (bench / "WORKBENCH.toml").read_text())
+        self.assertNotIn("visibility", (study / "STUDY.toml").read_text())  # the workbench decides it
 
         self.assertEqual(run("new", "app", "tone-explorer", "-q", "Hear it?", "--study", str(study))[0], 0)
         self.assertEqual(run("new", "sim", "cochlea", "-q", "A filterbank", "--inside", str(study))[0], 0)

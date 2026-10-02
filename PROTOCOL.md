@@ -475,7 +475,8 @@ A **workbench** is checked for: a valid manifest (no stage), the README kind lin
 `CLAUDE.md` and `AGENTS.md`, the prereg kit, private folders that exist and a private repo when any are
 listed, and every study it lists, each checked as a study minus the repo-level rows (unregistered
 `studies/` folders are a warning). A study's or workbench's in-repo tool (`[[tools]]` with a `path`) must
-exist.
+exist. A dataset or calculator registered with `adopted = true` predates the unit formats: it must exist,
+and a warning says it owes its manifest when it is next worked on.
 
 It exits nonzero on any failure, so it can gate CI. Warnings are printed and do not fail.
 
