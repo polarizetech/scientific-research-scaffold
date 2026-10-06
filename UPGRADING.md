@@ -16,6 +16,20 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.8.1
+
+**`scaffold update` does:** replaces an unedited CI workflow with the one that reads the optional
+`PRIVATE_DEPS_TOKEN` secret, and moves the CI ref to `v0.8.1`. In an edited workflow only the ref moves.
+
+**The session does:**
+- **A repo that pins private repos of its organisation by git URL** needs the secret before CI can install
+  them. Creating a token and adding a secret are the person's to do: a fine-grained personal access token (or
+  a GitHub App token) with read-only **Contents** access to the pinned repos, saved as the repository or
+  organisation Actions secret `PRIVATE_DEPS_TOKEN` (PROTOCOL.md § 4). Until then CI warns and runs the
+  scaffold check only.
+- **A repo that worked around this by editing its workflow** keeps its edit; `update` shows the difference.
+  `scaffold update --apply --adopt .github/workflows/check.yml` replaces it with the scaffold's.
+
 ## v0.8.0
 
 **`scaffold update` does:** moves the CI ref to `v0.8.0`; nothing else new.

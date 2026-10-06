@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.1 (2026-10-06)
+
+- **Generated CI can install private dependencies.** A repo that pins the organisation's private repos by git
+  URL failed at `uv sync` in GitHub Actions (`could not read Username for 'https://github.com'`), because the
+  default token reads only its own repo, and `make check` never ran. The workflow of every kind now reads an
+  optional `PRIVATE_DEPS_TOKEN` secret and, when it is set, uses it for the profile's `org` on github.com.
+  Without the secret, an install that fails in a repo with such pins is a warning and the scaffold check still
+  runs; any other failed install still fails the job. See PROTOCOL.md § 4.
+- Generated CI checks out `v0.8.1`.
+
 ## v0.8.0 (2026-10-02)
 
 - **The workbench kind.** `WORKBENCH.toml`: one repo holding general `tools/`, `sims/` and `apps/` and one folder

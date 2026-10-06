@@ -87,7 +87,9 @@ class Scaffold(unittest.TestCase):
         self.assertTrue((repo / "apps" / "v2-second" / "index.html").exists())
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
-        self.assertNotIn("{{", "".join(p.read_text() for p in repo.rglob("*") if p.is_file() and ".git" not in p.parts))
+        # an unfilled {{placeholder}}; the CI workflow's own `${{ secrets.X }}` is not one
+        self.assertNotRegex("".join(p.read_text() for p in repo.rglob("*") if p.is_file() and ".git" not in p.parts),
+                            r"\{\{\w+\}\}")
 
     def test_example_profile_has_no_workbench_resolver(self):
         repo = self.study("plain", profile="example")
@@ -347,6 +349,95 @@ class Scaffold(unittest.TestCase):
         ci.write_text(ci.read_text().replace(f"ref: {scaffold.SCAFFOLD_REF}", "ref: main"))
         (repo / scaffold.LOCK).unlink()
         self.assertEqual(self.plan(repo)[".github/workflows/check.yml"], "update")
+
+    #: The CI workflow v0.8.0 wrote for every kind, before it could read private dependencies.
+    V080_CI = """name: check
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: polarizetech/scientific-research-scaffold
+          ref: v0.8.0
+          path: .scaffold
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen || uv sync
+      - run: make check SCAFFOLD="python3 .scaffold/bin/scaffold"
+"""
+
+    def on_v080(self, repo, lock=True):
+        """Make the repo's CI what v0.8.0 wrote, recorded in the lock or not."""
+        ci = repo / ".github" / "workflows" / "check.yml"
+        ci.write_text(self.V080_CI)
+        if lock:
+            recorded = scaffold.read_lock(repo)
+            recorded["scaffold"] = "v0.8.0"
+            recorded["files"][".github/workflows/check.yml"] = scaffold.sha256(self.V080_CI)
+            (repo / scaffold.LOCK).write_text(scaffold.json.dumps(recorded))
+        else:
+            (repo / scaffold.LOCK).unlink()
+        return ci
+
+    def test_update_moves_a_v0_8_0_repo_to_the_workflow_that_reads_the_token(self):
+        for repo in (self.study(), self.tool(), self.workbench()):
+            ci = self.on_v080(repo)
+            self.committed(repo)
+            self.assertEqual(self.plan(repo)[".github/workflows/check.yml"], "update", repo.name)
+            code, out = run("update", str(repo), "--apply")
+            self.assertEqual(code, 0, out)
+            self.assertIn("secrets.PRIVATE_DEPS_TOKEN", ci.read_text())
+            self.assertEqual(set(self.plan(repo).values()), {"current"}, repo.name)
+
+    @unittest.skipIf(subprocess.run(["git", "cat-file", "-e", "v0.8.0:templates/study/.github/workflows/check.yml"],
+                                    cwd=ROOT, capture_output=True).returncode, "needs this scaffold's v0.8.0 tag")
+    def test_update_recognises_v0_8_0_ci_without_a_lock(self):
+        repo = self.study()
+        self.on_v080(repo, lock=False)
+        self.assertEqual(self.plan(repo)[".github/workflows/check.yml"], "update")
+
+    def test_ci_reads_private_dependencies_with_the_profiles_org(self):
+        for kind in scaffold.KINDS:
+            for pname in ("example", "polarizetech"):
+                profile = scaffold.load_profile(pname)
+                text = scaffold.render_owned(kind, ".github/workflows/check.yml",
+                                             scaffold.template_vars(profile, "x", "?"), profile)
+                self.assertIn("DEPS_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}", text, kind)
+                self.assertEqual(set(re.findall(r"github\.com/([\w.-]*)/", text)), {profile["org"]}, kind)
+                self.assertIn(f'.insteadOf "https://github.com/{profile["org"]}/"', text, kind)
+
+    def install_step(self, repo, pyproject, token, uv_works):
+        """Run the generated workflow's install step with a stand-in `uv`. Returns (exit status, output)."""
+        text = (repo / ".github" / "workflows" / "check.yml").read_text()
+        block = re.search(r"- name: Install dependencies\n        run: \|\n((?:          .*\n)+)", text).group(1)
+        work = self.tmp / "ci"
+        (work / "bin").mkdir(parents=True, exist_ok=True)
+        uv = work / "bin" / "uv"
+        uv.write_text(f"#!/bin/sh\nexit {0 if uv_works else 1}\n")
+        uv.chmod(0o755)
+        (work / "pyproject.toml").write_text(pyproject)
+        env = {**os.environ, "PATH": f"{work / 'bin'}{os.pathsep}{os.environ['PATH']}", "DEPS_TOKEN": token}
+        done = subprocess.run(["bash", "-e", "-c", "\n".join(line[10:] for line in block.splitlines())],
+                              cwd=work, env=env, capture_output=True, text=True)
+        return done.returncode, done.stdout + done.stderr
+
+    def test_ci_install_without_a_token_warns_only_for_private_pins(self):
+        repo = self.study()
+        private = 'dependencies = ["lib @ git+https://github.com/polarizetech/lib@v1.0.0"]\n'
+        public = 'dependencies = ["numpy"]\n'
+        self.assertEqual(self.install_step(repo, public, "", uv_works=True), (0, ""))
+        code, out = self.install_step(repo, private, "", uv_works=False)
+        self.assertEqual(code, 0, out)
+        self.assertIn("::warning::PRIVATE_DEPS_TOKEN is not set", out)
+        self.assertEqual(self.install_step(repo, private, "t0ken", uv_works=False)[0], 1)  # a token that cannot read them
+        self.assertEqual(self.install_step(repo, public, "", uv_works=False)[0], 1)  # nothing to do with the token
 
     def test_a_sim_inside_a_study_is_updated_with_the_study(self):
         repo = self.study()

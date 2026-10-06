@@ -44,7 +44,7 @@ KINDS = ("study", "sim", "tool", "workbench")
 #: Kinds that hold units (apps, sims, tools, datasets, calculators), and so can be given to --inside.
 CONTAINERS = ("study", "workbench")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.8.0"
+SCAFFOLD_REF = "v0.8.1"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
