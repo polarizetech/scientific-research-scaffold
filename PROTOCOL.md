@@ -163,6 +163,15 @@ tools depend on other tools and libraries; nothing depends on a study. Nobody im
 A result produced through the workbench resolver is an exploratory result. Before it is quoted outside,
 the tool it used is released and pinned.
 
+**Private dependencies in CI.** The token GitHub Actions gives a workflow reads only its own repo, so a
+pinned git URL to another private repo fails there with `could not read Username for 'https://github.com'`.
+The generated workflow reads one optional Actions secret, `PRIVATE_DEPS_TOKEN`: a token with read-only
+**Contents** access to the private repos the project pins, and nothing else. When it is set, CI uses it for
+git URLs under the profile's `org` on github.com. When it is not, and the install fails in a repo that pins
+that organisation by git URL, CI says so in a warning and still runs `scaffold check`; tests that need the
+dependencies will fail until the secret is added. Pull requests from forks never receive the secret. This is
+advice about the generated CI, not a rule `check` enforces.
+
 **No absolute home-directory paths, anywhere.** A path that names one person's machine is a result nobody
 else can regenerate. `scaffold check` flags them.
 

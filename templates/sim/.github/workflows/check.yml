@@ -8,6 +8,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      DEPS_TOKEN: ${{ secrets.PRIVATE_DEPS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -16,5 +18,18 @@ jobs:
           ref: {{scaffold_ref}}
           path: .scaffold
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --frozen || uv sync
+      # pyproject.toml may pin private {{org}} repos by git URL, which the default token cannot read.
+      # Add a read-only token for them as the PRIVATE_DEPS_TOKEN secret (PROTOCOL.md § 4). Without one,
+      # an install that fails on those pins is a warning, so the scaffold check below still runs.
+      - name: Let uv read the organisation's private repos
+        if: env.DEPS_TOKEN != ''
+        run: git config --global url."https://x-access-token:${DEPS_TOKEN}@github.com/{{org}}/".insteadOf "https://github.com/{{org}}/"
+      - name: Install dependencies
+        run: |
+          if uv sync --frozen || uv sync; then exit 0; fi
+          if [ -z "$DEPS_TOKEN" ] && grep -qs "github.com/{{org}}/" pyproject.toml uv.lock; then
+            echo "::warning::PRIVATE_DEPS_TOKEN is not set, so the private {{org}} dependencies were not installed. The scaffold check still runs."
+            exit 0
+          fi
+          exit 1
       - run: make check SCAFFOLD="python3 .scaffold/bin/scaffold"
