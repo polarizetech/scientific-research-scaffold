@@ -694,6 +694,58 @@ jobs:
         self.assertEqual(run("new", "dataset", "x-data", "--study", str(self.study()))[0], 1)
         self.assertEqual(run("new", "calculator", "x-calc", "-q", "?", "--study", str(self.tmp))[0], 1)
 
+    def test_exploratory_unit_gets_a_build_note_not_a_claim(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "tone-sketch", "-q", "A tone viewer", "--study", str(repo), "--exploratory")[0], 0)
+        self.assertEqual(run("new", "dataset", "assr", "-q", "A first look", "--study", str(repo), "--exploratory")[0], 0)
+        self.assertEqual(run("new", "calculator", "spl", "-q", "Level sums", "--study", str(repo), "--exploratory")[0], 0)
+        self.assertEqual(run("new", "sim", "cochlea", "-q", "A filterbank", "--inside", str(repo), "--exploratory")[0], 0)
+        self.assertEqual(run("new", "tool", "meter", "-j", "Reads a level", "--inside", str(repo), "--exploratory")[0], 0)
+        for unit, doc in (("apps/v1-tone-sketch", "README.md"), ("datasets/assr", "README.md"),
+                          ("calculators/spl", "CALCULATOR.md"), ("sims/cochlea", "README.md"), ("tools/meter", "README.md")):
+            rec = scaffold.load_toml(repo / unit / "SCOPE.toml")
+            self.assertEqual((rec["format"], rec["stage"]), (3, "exploratory"), unit)
+            self.assertTrue(rec["exploration"]["building"], unit)
+            self.assertRegex(rec["exploration"]["started"], r"^\d{4}-\d{2}-\d{2}$")
+            self.assertEqual(rec["claim"]["text"], "", unit)  # no claim is asked for or invented
+            self.assertIn("**Scope:** exploratory", (repo / unit / doc).read_text(), unit)
+        self.assertEqual(scaffold.load_toml(repo / "apps/v1-tone-sketch/SCOPE.toml")["exploration"]["building"],
+                         "A tone viewer")
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        # without the flag nothing is written: the session settles the claim (the kit's SCOPE_PROTOCOL.md)
+        self.assertEqual(run("new", "dataset", "mmn", "-q", "Is it there?", "--study", str(repo))[0], 0)
+        self.assertFalse((repo / "datasets" / "mmn" / "SCOPE.toml").exists())
+
+    def test_exploratory_is_for_units_not_studies(self):
+        code, out = run("new", "study", "reef", "-q", "x", "--dir", str(self.tmp), "--profile", "example", "--exploratory")
+        self.assertEqual(code, 1)
+        self.assertIn("starts with its question", out)
+        code, out = run("new", "sim", "wave", "-q", "A wave model", "--dir", str(self.tmp), "--profile", "example",
+                        "--exploratory", "--no-git")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(scaffold.load_toml(self.tmp / "wave" / "SCOPE.toml")["stage"], "exploratory")
+        self.assertIn("**Scope:** exploratory", (self.tmp / "wave" / "README.md").read_text())
+
+    def test_exploratory_unit_says_so_and_has_no_experiments(self):
+        repo = self.study()
+        run("new", "dataset", "assr", "-q", "A first look", "--study", str(repo), "--exploratory")
+        unit = repo / "datasets" / "assr"
+        (unit / "preregistrations" / "E01-first").mkdir(parents=True)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("datasets/assr: exploratory, yet it has preregistered experiments (E01-first)", out)
+        scope = unit / "SCOPE.toml"
+        scope.write_text(scope.read_text().replace('stage = "exploratory"', 'stage = "testing"'))
+        self.assertEqual(run("check", str(repo))[0], 0)  # with its claim stage, experiments are expected
+        scope.write_text(scope.read_text().replace('stage = "testing"', 'stage = "exploratory"'))
+        shutil.rmtree(unit / "preregistrations" / "E01-first")
+        readme = unit / "README.md"
+        readme.write_text(readme.read_text().replace(scaffold.EXPLORATORY_LABEL, ""))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("datasets/assr: SCOPE.toml says exploratory, but its README doesn't", out)
+
     def test_tool_holds_no_preregistrations(self):
         repo = self.tool()
         (repo / "preregistrations").mkdir()

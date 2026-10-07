@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.0 (2026-10-07)
+
+- **Exploratory units.** `scaffold new app|sim|tool|dataset|calculator ... --exploratory` creates the unit
+  without a claim: it writes the unit's `SCOPE.toml` at the exploratory stage, with a build note taken from
+  `--question` (or `--job`) and the date, and labels the unit's README. Sessions don't ask for a claim or an
+  evidence basis in such a unit. A study or workbench can't be exploratory.
+- **`check`** fails an exploratory unit that doesn't say so in its README, or that has preregistered
+  experiments: it gets its claim (and `stage = "testing"`) first.
+- **The claim step is one question** for every other new unit, from preregistration kit 0.9.0: the claim and
+  what would count against it. The shared rules in `AGENTS.md` say so for each kind.
+- Generated CI checks out `v0.9.0`.
+
 ## v0.8.1 (2026-10-06)
 
 - **Generated CI can install private dependencies.** A repo that pins the organisation's private repos by git

@@ -10,6 +10,7 @@
   scaffold new app <slug> --question "..." [--study PATH]
   scaffold new dataset <slug> --question "..." [--study PATH]
   scaffold new calculator <slug> --question "what it computes" [--study PATH]
+  scaffold new app|sim|tool|dataset|calculator ... --exploratory    no claim yet: a build note instead
   scaffold promote-sim <study>/sims/<slug>
   scaffold check [PATH]
   scaffold status [PATH ...]
@@ -44,7 +45,7 @@ KINDS = ("study", "sim", "tool", "workbench")
 #: Kinds that hold units (apps, sims, tools, datasets, calculators), and so can be given to --inside.
 CONTAINERS = ("study", "workbench")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.8.1"
+SCAFFOLD_REF = "v0.9.0"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
@@ -525,6 +526,31 @@ def install_kit(dest, profile, kit_ap, extra=None):
     return True
 
 
+EXPLORATORY_LABEL = ("**Scope:** exploratory. No claim yet, and nothing here is a finding. It gets its claim before "
+                     "its first preregistered experiment.")
+EXPLORATORY_DOCS = ("README.md", "CALCULATOR.md")
+
+
+def write_exploratory(dest, unit, building):
+    """Mark a unit the person called exploratory: the scope record the preregistration kit reads (its
+    SCOPE_PROTOCOL.md, format 3) with the build note in place of a claim, and the label where it is read."""
+    (dest / "SCOPE.toml").write_text(
+        "# Scope record (.agents/protocols/SCOPE_PROTOCOL.md). Exploratory: no claim yet, and features need no\n"
+        "# evidence basis or decision. Settle the claim, and set stage = \"testing\", before the first experiment.\n\n"
+        f"format = 3\nunit = {toml_str(unit)}\nstage = \"exploratory\"\n\n"
+        f"[exploration]\nbuilding = {toml_str(building)}\nknown = \"\"\n"
+        f"started = \"{_dt.date.today().isoformat()}\"\n\n"
+        "[claim]\ntext = \"\"\ncounts_against = \"\"\ndecided = \"\"\nexperiments = []\n", encoding="utf-8")
+    doc = next((dest / n for n in EXPLORATORY_DOCS if (dest / n).exists()), None)
+    if doc is None:
+        (dest / "README.md").write_text(f"# {unit}\n\n{EXPLORATORY_LABEL}\n", encoding="utf-8")
+        return
+    lines = doc.read_text(encoding="utf-8").splitlines()
+    at = next((i + 1 for i, ln in enumerate(lines) if ln.startswith("# ")), 0)
+    lines[at:at] = ["", EXPLORATORY_LABEL]
+    doc.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def append_toml(path, block):
     text = path.read_text(encoding="utf-8").rstrip("\n")
     path.write_text(text + "\n\n" + block.strip("\n") + "\n", encoding="utf-8")
@@ -538,6 +564,9 @@ def cmd_new(a):
             raise Fail(f"a {a.kind} needs --question")
         return new_app(a) if a.kind == "app" else new_unit(a)
     check_name(a.name)
+    if a.exploratory and a.kind in CONTAINERS:
+        raise Fail(f"a {a.kind} starts with its question; --exploratory is for a unit (an app, sim, tool, dataset "
+                   "or calculator)")
     inside = Path(a.inside).resolve() if getattr(a, "inside", None) else None
     host = container(inside) if inside else None  # (kind, manifest path) of what --inside points at
     if inside:
@@ -577,7 +606,9 @@ def cmd_new(a):
         render(TEMPLATES / a.kind, dest, v, skip=skip)
     if not inside:
         render_agents(dest, a.kind, v, profile)
-    print(f"created {a.kind} {dest}")
+    if a.exploratory:
+        write_exploratory(dest, a.name, a.question or a.job)
+    print(f"created {a.kind} {dest}" + (" (exploratory: no claim yet)" if a.exploratory else ""))
 
     if inside:
         manifest = dest / f"{a.kind.upper()}.toml"
@@ -643,6 +674,8 @@ def new_app(a):
                       version=version, port=port)
     render(TEMPLATES / "app", dest, v)
     (dest / "serve.py").chmod(0o755)
+    if a.exploratory:
+        write_exploratory(dest, dest.name, a.question)
     append_toml(manifest_path,
                 f"[[apps]]\nversion = {toml_str(version)}\nslug = {toml_str(a.name)}\n"
                 f"question = {toml_str(a.question)}\nstatus = \"active\"")
@@ -662,6 +695,8 @@ def new_unit(a):
     profile = load_profile(profile_name(a.profile, m))
     v = template_vars(profile, m.get("name", study.name), a.question, slug=a.name)
     render(TEMPLATES / "units" / a.kind, dest, v)
+    if a.exploratory:
+        write_exploratory(dest, a.name, a.question)
     append_toml(manifest_path, f"[[{folder}]]\nslug = {toml_str(a.name)}\npath = {toml_str(f'{folder}/{a.name}')}")
     print(f"created {a.kind} {dest}\n  registered in {manifest_path}")
 
@@ -874,6 +909,7 @@ def check_repo(root, rep, nested=False, profile_override=None):
     if nested:
         return
 
+    check_exploratory(root, rep)
     code, out, _ = git("ls-files", cwd=root)
     hits = []
     if not code:
@@ -941,6 +977,33 @@ def check_calculator(root, c, stage, rep):
     rows = [r for r in ref.read_text(encoding="utf-8").splitlines()[1:] if r.strip()] if ref.exists() else []
     rep.ok(bool(rows), f"calculator {slug}: reference.csv has no reference values"
            + ("" if stage == "SKETCH" else " (required from PROBE on)"), warn=(stage == "SKETCH"))
+
+
+def check_exploratory(root, rep):
+    """A unit marked exploratory (SCOPE.toml, stage = "exploratory", format 3) says so where it is read, and has
+    no preregistered experiments: an experiment tests a claim, and it has none yet."""
+    code, out, _ = git("ls-files", "--cached", "--others", "--exclude-standard", "--", "SCOPE.toml", "*/SCOPE.toml",
+                       cwd=root)
+    found = out.splitlines() if not code else [p.relative_to(root).as_posix() for p in root.rglob("SCOPE.toml")
+                                               if ".git" not in p.parts and ".agents" not in p.parts]
+    for rel in sorted(found):
+        if rel.startswith(".agents/"):
+            continue
+        try:
+            rec = load_toml(root / rel)
+        except Exception:  # noqa: BLE001 - the kit's scope-status reports a record that doesn't parse
+            continue
+        if rec.get("format") != 3 or rec.get("stage") != "exploratory":
+            continue
+        unit = (root / rel).parent
+        name = "the repo" if unit == root else unit.relative_to(root).as_posix()
+        said = any("exploratory" in (unit / n).read_text(encoding="utf-8").lower()
+                   for n in EXPLORATORY_DOCS if (unit / n).is_file())
+        rep.ok(said, f"{name}: SCOPE.toml says exploratory, but its README doesn't; nothing it shows is a finding")
+        prereg = unit / "preregistrations"
+        tested = sorted(d.name for d in prereg.iterdir() if d.is_dir()) if prereg.is_dir() else []
+        rep.ok(not tested, f"{name}: exploratory, yet it has preregistered experiments ({', '.join(tested[:3])}); "
+               "settle its claim and set stage = \"testing\" in SCOPE.toml")
 
 
 def check_tool(root, m, rep):
@@ -1357,8 +1420,12 @@ def main(argv=None):
     n = sub.add_parser("new", help="create a study, a sim, or an app inside a study")
     n.add_argument("kind", choices=("study", "sim", "tool", "workbench", "app", *UNITS))
     n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
-    n.add_argument("--question", "-q", help="the question it asks (or what a sim simulates)")
+    n.add_argument("--question", "-q", help="the question it asks (or what a sim simulates; with --exploratory, "
+                                            "what is being built)")
     n.add_argument("--job", "-j", help="for a tool: what it does for the repos that use it")
+    n.add_argument("--exploratory", action="store_true",
+                   help="for a unit: no claim yet. --question (or --job) says what is being built; the unit is "
+                        "labelled exploratory and nothing it shows is a finding")
     n.add_argument("--profile", help="profile name (default: $SCAFFOLD_PROFILE; there is no built-in default)")
     n.add_argument("--visibility", choices=VISIBILITIES,
                    help="record a visibility decision already made (default: left undecided; check fails until set)")

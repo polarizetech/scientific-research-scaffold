@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "scientific-research-scaffold",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Create and adopt reproducible scientific study, simulator, and research-tool repositories.",
   "author": {
     "name": "Polarize Technologies",

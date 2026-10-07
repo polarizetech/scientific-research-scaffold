@@ -332,7 +332,8 @@ uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
   heading is advice; `scaffold check` does not read changelog sections.)
 - **A tool is scoped before anything scientific is built in it.** The prereg kit's `prereg` module settles
   the tool's claim with the person first, then its features, then an evidence basis and the person's recorded
-  decision for each scientific feature, in `SCOPE.toml` at the root. An override's experiment is preregistered
+  decision for each scientific feature, in `SCOPE.toml` at the root. A tool the person marks exploratory
+  (§ 11) waits for all of that until it gets its claim. An override's experiment is preregistered
   in the research corpus, never in the tool. Infrastructure is the agent's to decide. `check` warns while a
   tool has no `SCOPE.toml`.
 - **A tool is released by the kit's `tool-versioning` protocol**, installed in place of the profile's
@@ -418,6 +419,16 @@ listed in `EXPERIMENTS.md`:
 4. Every change after the tag goes in `DEVIATIONS.md`, with whether the outcome was already known.
 5. Exploratory work stays under `exploratory/`, and says so.
 
+**A unit starts with a claim, or is marked exploratory.** By default the first work in a unit is one question
+from the session: the claim it tests, and what would count against it (the kit's `SCOPE_PROTOCOL.md`, recorded
+in the unit's `SCOPE.toml`). The rest of the claim, what its terms mean, how it is measured and the smallest
+effect that matters, is stated in its first `PREREG.md`. A unit the person calls exploratory skips the claim and
+the evidence step: `scaffold new <app|sim|tool|dataset|calculator> ... --exploratory` writes its `SCOPE.toml`
+with a build note (what is being built, and the date) and labels the unit's README. Nothing an exploratory
+unit shows is a finding, and it has no preregistered experiments: preregistering the first one is when its
+claim is settled and its record moves to `stage = "testing"`. A study or a workbench is never exploratory: it
+starts with its question. Needs kit 0.9.0 or later.
+
 The kit is installed, not linked: `kit_ap init` copies the protocols into `.agents/` and pins the kit's
 commit in `.agents/kit_ap.lock`. `scaffold new` runs it for you when it can find the kit.
 
@@ -477,6 +488,7 @@ and saying plainly what was not done.
 | holds no research: no `question`, `[corpus]`, `RESEARCH.md`, `EXPERIMENTS.md`, `experiments/`, `preregistrations/` | | | | ✓ |
 | `CHANGELOG.md` and `CITATION.cff` exist; one `X.Y.Z` version across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and a `CHANGELOG.md` heading | | | | ✓ |
 | every consumer has a `name`, a `repo` and a non-empty `uses` | | | | ✓ |
+| a unit whose `SCOPE.toml` says `stage = "exploratory"` says so in its README (or `CALCULATOR.md`), and has no preregistered experiments | ✓ | ✓ | ✓ | ✓ |
 | the corpus is not a submodule | ✓ | ✓ | | ✓ |
 | no absolute home-directory paths in tracked text files | warning | warning | warning | warning |
 

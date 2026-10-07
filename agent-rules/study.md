@@ -6,6 +6,10 @@
   a model in `sims/`; an analysis of an existing dataset in `datasets/`; a piece of mathematics in
   `calculators/`; reusable code in a tool repo. Create each with `scaffold new app|sim|dataset|calculator`,
   and follow its section of the study protocol, including what it needs before it starts.
+- **A unit starts with its claim, in one question** (the claim and what would count against it, recorded in
+  its `SCOPE.toml`; `.agents/protocols/SCOPE_PROTOCOL.md`). If the person says a unit is exploratory, don't
+  ask: create it with `--exploratory`, or set that stage in its `SCOPE.toml`, and build. It gets its claim
+  before its first preregistered experiment.
 - **Preregistrations live in the unit they test** (`<unit>/preregistrations/<EID>/`) and are listed in
   `EXPERIMENTS.md`. Nothing an app shows is a finding.
 - **Predict first.** No run that could be quoted happens before its `PREREG.md` is tagged

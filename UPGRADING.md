@@ -16,6 +16,20 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.9.0
+
+**`scaffold update` does:** moves the CI ref to `v0.9.0`, and refreshes the scaffold section of `AGENTS.md`
+with the new rule: a unit starts with its claim in one question, or is marked exploratory.
+
+**The session does:**
+- **Update the preregistration kit to v0.9.0 or later** (`.agents/bin/kit_ap update`). Existing `SCOPE.toml`
+  records need no edit: the stage they call `exploratory` is now shown as `testing`, because it required a
+  claim.
+- **A unit the person considers exploratory** can be marked so: set `format = 3` and `stage = "exploratory"` in
+  its `SCOPE.toml`, add `[exploration]` with `building` and `started`, and say "exploratory" in its README.
+  Ask the person which units these are; don't decide it for them, and don't remove a claim that is settled.
+- **A unit with preregistered experiments is not exploratory.** `check` fails one that is marked so.
+
 ## v0.8.1
 
 **`scaffold update` does:** replaces an unedited CI workflow with the one that reads the optional

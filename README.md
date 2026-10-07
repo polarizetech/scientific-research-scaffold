@@ -53,6 +53,7 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 | `scaffold new tool <name> -j "..." [--inside STUDY\|WORKBENCH]` | a new tool repo, or a tool folder inside a study or workbench |
 | `scaffold new workbench <name> -q "..."` | a workbench: general tools, sims and apps, and studies as folders (`new study --inside`) |
 | `scaffold new app <slug> -q "..."` | the next `apps/vN-<slug>/` in the current study, registered in `STUDY.toml` |
+| `scaffold new <app\|sim\|tool\|dataset\|calculator> ... --exploratory` | the same unit with no claim asked for: a build note in `SCOPE.toml`, and an exploratory label |
 | `scaffold promote-sim sims/<slug>` | split a sim out of a study into its own repo, keeping its history |
 | `scaffold check [PATH]` | check a repo against the protocol; nonzero exit on failure, for CI |
 | `scaffold status [PATH ...]` | one line per repo: kind, stage, scaffold release, CI ref, check result, pending update |

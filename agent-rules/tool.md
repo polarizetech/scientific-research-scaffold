@@ -7,7 +7,8 @@
 - **Scope before science.** The claim, then the features, then an evidence basis and the person's recorded
   decision for every scientific feature, in `SCOPE.toml` (`.agents/protocols/SCOPE_PROTOCOL.md`). Infrastructure
   is yours to decide; nothing scientific is built before it is scoped. An override's experiment is
-  preregistered in the research corpus, not here.
+  preregistered in the research corpus, not here. A tool the person calls exploratory skips this until it
+  gets its claim (`stage = "exploratory"` in `SCOPE.toml`); nothing it shows is a finding.
 - **Releases** follow `.agents/protocols/TOOL_VERSIONING.md`; run `python3 .agents/tools/release-check` before
   tagging.
 - **One version.** `version` in `TOOL.toml`, `pyproject.toml` and `CITATION.cff`, and a `CHANGELOG.md`
