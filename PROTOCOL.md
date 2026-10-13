@@ -30,7 +30,7 @@ library. Nothing in it resolves a path on one person's machine.
 
 | kind | what it is | versions live |
 |---|---|---|
-| **study** | one research question and everything used to pursue it | as tags and as `apps/vN-*` folders |
+| **study** | one research question and everything used to pursue it | as tags and as `apps/<slug>/vN/` folders |
 | **sim** | one simulator, under adaptive preregistration | as `model-vX.Y.Z` tags inside one repo |
 | **tool** | one job done for other repos (an instrument, a recorder, a service, a library); no research | as `vX.Y.Z` tags inside one repo |
 | **workbench** | where work starts: general tools, sims and apps, and the studies that use them, in one repo | per unit; the workbench itself has no one stage |
@@ -77,7 +77,7 @@ profile = "polarizetech"
 project = "reef-acoustics"       # the study's folder in the corpus
 claim_prefix = "REEF"
 
-[[apps]]                         # one entry per version, oldest first
+[[apps]]                         # one entry per version of each app, oldest first
 version = "v1"
 slug = "site-listener"
 question = "Can a healthy and a degraded site be told apart by ear?"
@@ -122,7 +122,7 @@ working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
   CITATION.cff
   pyproject.toml + uv.lock   every library, tool and external sim pinned to a tag
   Makefile             `make check` runs everything CI runs
-  apps/<vN-slug>/      interactive exploration and demonstration, one folder per version (§ 6)
+  apps/<slug>/<vN>/    interactive exploration and demonstration, one folder per app, one inside it per version (§ 6)
   sims/<slug>/         simulators still living inside the study (§ 7)
   datasets/<slug>/     dataset analyses: the data pinned, the analysis preregistered (§ 9)
   calculators/<slug>/  the study's mathematics as tested code (§ 10)
@@ -184,7 +184,7 @@ strict they must be, so each has a folder, a register in `STUDY.toml`, and rules
 
 | type | where | for | before it starts |
 |---|---|---|---|
-| **app** | `apps/vN-<slug>/` | exploring or demonstrating a concept interactively; may become a deliverable | the concept, the research it draws on, and what it should help someone understand |
+| **app** | `apps/<slug>/vN/` | exploring or demonstrating a concept interactively; may become a deliverable | the concept, the research it draws on, and what it should help someone understand |
 | **sim** | `sims/<slug>/`, or its own repo | running a model forward, often on an existing open-source simulator | the model's equations and every parameter with its source, the question, and a prediction |
 | **dataset** | `datasets/<slug>/` | testing the question against data that exists | a pinned reference to the data, selection criteria, and a preregistered analysis plan, before the outcome is opened |
 | **calculator** | `calculators/<slug>/` | the mathematics: equations, constants, ratios, scaling laws | the equation, its source or derivation, units, valid range and reference values |
@@ -243,15 +243,19 @@ to research, a `scaffold new` command, and `check` rules. It is added to this se
 
 ## 6. Apps
 
-- **One folder per version**: `apps/v1-site-listener/`, `apps/v2-site-comparison/`. A new idea gets a new
-  version; a superseded version is left as it was and marked `superseded` in the manifest, so the path the
-  study took stays visible.
+- **One folder per app, and one inside it per version**: `apps/site-listener/v1/`, `apps/site-listener/v2/`,
+  `apps/site-comparison/v1/`. Each app's versions are numbered from v1. A new idea gets a new app; a new
+  take on the same app gets its next version. A superseded version is left as it was and marked `superseded`
+  in the manifest, so the path the study took stays visible.
+- **The earlier layout still works.** A repo laid out as `apps/v1-site-listener/` (one number sequence for
+  the whole study) passes `check` as it is: an entry with no `path` is looked for at `apps/<slug>/<version>/`
+  and then at `apps/<version>-<slug>/`. Nothing has to move.
 - Each app is `index.html` + `app.js` + `app.css` + `serve.py`, with no build step unless it needs one.
 - `serve.py` serves the design system through an **allow-list** of named files, never a directory mount,
   and the app must still work unstyled if the design system is absent.
 - An app that shows a number shows **how sure** the number is, in a label the design system never lets be
   hidden.
-- `scaffold new app <slug>` adds the next version and its manifest entry.
+- `scaffold new app <slug>` adds that app's next version (v1 for a new slug) and its manifest entry.
 
 ---
 

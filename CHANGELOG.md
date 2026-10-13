@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Apps are laid out as `apps/<slug>/vN/`**: one folder per app, one inside it per version, each app
+  numbered from v1. `scaffold new app <slug>` gives a new slug its `v1` and an existing slug its next
+  version. Before, a study had one number sequence and folders named `apps/vN-<slug>/`, which put unrelated
+  apps side by side in number order and split one app's versions apart.
+- **The earlier layout still passes `check`.** An `[[apps]]` entry with no `path` is looked for at
+  `apps/<slug>/<version>/` and then at `apps/<version>-<slug>/`. No repo has to move anything.
+- The app template's `serve.py` looks one folder further up for the design system, to match the new depth.
+- Needs the preregistration kit release that reads the same layout (adaptive-preregistration, unreleased).
+
 ## v0.9.1 (2026-10-13)
 
 - **Research questions go to the retrieval tool first.** A profile can name the organisation's literature and

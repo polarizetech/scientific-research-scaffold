@@ -52,7 +52,7 @@ to protect.
 
 ## 3. Moves, later, one at a time
 
-Moving a folder into its default location (`projects/foo` → `apps/v1-foo`) is optional. When it is worth
+Moving a folder into its default location (`projects/foo` → `apps/foo/v1`) is optional. When it is worth
 doing, do it as one commit per move, with the gate run before and after, and update the manifest's `path`
 in the same commit.
 
