@@ -25,6 +25,10 @@ repo = ""
 marker = ""                                  # a file that only exists in a real checkout of it
 env_aliases = []                             # older env var names, still honoured
 
+[retrieval]                                  # the literature and evidence search every session uses first; leave server empty for none
+repo = ""                                    # where it lives, for the link in AGENTS.md
+server = ""                                  # the MCP server's name as sessions see it
+
 [licence]
 code = "MIT"
 docs = "CC-BY-4.0"

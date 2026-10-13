@@ -447,6 +447,11 @@ Findings are written to the **corpus**, in the study's project folder there. The
 - **A study never raises a claim's tier.** The corpus decides what a result does to a claim.
 - **The corpus is never a submodule of a study.** Two working copies of one corpus drift.
 - A sim that has no corpus project yet says so in its `RESEARCH.md` rather than inventing one.
+- **Research questions go to the retrieval tool first.** When the profile names one (`[retrieval]`: the MCP
+  server sessions see, and its repo), the scaffold's section of `AGENTS.md` tells every assistant to search
+  with it before answering a question about science, the literature or evidence, to say so when its tools
+  aren't available, and to skip it when the person says to. This is an instruction to sessions; `scaffold
+  check` does not enforce it.
 
 ---
 

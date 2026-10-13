@@ -565,6 +565,19 @@ jobs:
         self.assertIn("gpt-5.6-sol", text)
         self.assertNotIn("{{", text)
 
+    def test_research_questions_go_to_the_profiles_retrieval_tool(self):
+        text = (self.study("roles", profile="polarizetech") / "AGENTS.md").read_text()
+        self.assertIn("**Search with the retrieval tool first.**", text)
+        self.assertIn("`research-rag`", text)
+        self.assertIn("The person can tell you not to use it", text)
+        self.assertLess(text.index("Search with the retrieval tool first"), text.index("## Agents and coordination"))
+        code, out = run("new", "tool", "recorder", "-j", "Records a signal", "--dir", str(self.tmp),
+                        "--profile", "polarizetech", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 0, out)  # every kind gets it, not only studies
+        self.assertIn("**Search with the retrieval tool first.**", (self.tmp / "recorder" / "AGENTS.md").read_text())
+        none = (self.study("plain", profile="example") / "AGENTS.md").read_text()  # a profile that names no tool
+        self.assertNotIn("retrieval tool", none)
+
     def test_each_kind_puts_its_shared_rules_in_agents_md(self):
         study, tool = self.study(), self.tool()
         self.assertEqual(run("new", "sim", "memory", "-q", "Tape", "--dir", str(self.tmp), "--profile", "example",

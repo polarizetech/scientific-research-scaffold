@@ -25,6 +25,10 @@ marker = "tools/REGISTRY.md"
 # An older variable name, still honoured.
 env_aliases = ["AUDIO_PROJECTS"]
 
+[retrieval]
+repo = "polarizetech/retrieval-augmented-generation"
+server = "research-rag"
+
 [licence]
 code = "MIT"
 docs = "CC-BY-4.0"

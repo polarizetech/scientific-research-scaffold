@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.1 (2026-10-13)
+
+- **Research questions go to the retrieval tool first.** A profile can name the organisation's literature and
+  evidence search (`[retrieval]`: `server`, the MCP server's name in a session, and `repo`). When it does, the
+  scaffold's section of `AGENTS.md` in every kind of repo tells every assistant to search with it before
+  answering a question about science, the literature or evidence, to say so when the tool isn't available, and
+  not to use it when the person says so. A profile that names none gets no such rule.
+- Pins scientific-research-agents v0.3.0 (adds a local-model roles template; the coordination protocol points
+  to it).
+- Generated CI checks out `v0.9.1`.
+
 ## v0.9.0 (2026-10-07)
 
 - **Exploratory units.** `scaffold new app|sim|tool|dataset|calculator ... --exploratory` creates the unit

@@ -16,6 +16,16 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.9.1
+
+**`scaffold update` does:** moves the CI ref to `v0.9.1`, and refreshes the scaffold section of `AGENTS.md`:
+it gains the retrieval rule when the repo's profile names a retrieval tool, and its links move to
+scientific-research-agents v0.3.0.
+
+**The session does:**
+- **Make sure the retrieval tool is connected** where sessions run. The rule names an MCP server; it does not
+  install one. If the server isn't in a session's tool list, tell the person; connecting it is theirs to do.
+
 ## v0.9.0
 
 **`scaffold update` does:** moves the CI ref to `v0.9.0`, and refreshes the scaffold section of `AGENTS.md`

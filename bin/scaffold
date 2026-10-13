@@ -45,7 +45,7 @@ KINDS = ("study", "sim", "tool", "workbench")
 #: Kinds that hold units (apps, sims, tools, datasets, calculators), and so can be given to --inside.
 CONTAINERS = ("study", "workbench")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.9.0"
+SCAFFOLD_REF = "v0.9.1"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
@@ -377,6 +377,20 @@ def render_agents(dest, kind, variables, profile):
             out.write_text(render_owned(kind, rel, variables, profile), encoding="utf-8")
 
 
+def retrieval_rule(profile):
+    """The rule that sends research questions to the profile's retrieval tool, or nothing if it names none."""
+    tool = profile.get("retrieval", {})
+    if not tool.get("server"):
+        return ""
+    where = f" ([{tool['repo']}](https://github.com/{tool['repo']}))" if tool.get("repo") else ""
+    return (f"- **Search with the retrieval tool first.** A question about science, the literature or evidence is "
+            f"answered from `{tool['server']}`{where}, the MCP server of that name in the session: search with it "
+            "before answering, and ground what you say in the passages it returns, not in memory or a general web "
+            "search. If its tools aren't available in the session, say so before answering any other way. The "
+            "person can tell you not to use it, for one question or a whole session. A question about this repo's "
+            "own code or files doesn't need it.\n")
+
+
 def agents_block(kind, variables, profile):
     """The scaffold's section of AGENTS.md: the roles and the coordination rules, for every assistant."""
     roster = "\n".join(f"| `{a}` | {ROLE_SUMMARIES[a]} | `.claude/agents/{a}.md` |" for a in AGENTS[kind])
@@ -386,7 +400,7 @@ def agents_block(kind, variables, profile):
     body = fill((AGENTS_DIR / "templates" / "AGENTS.block.md").read_text(encoding="utf-8"), {
         **variables,
         "repo_rules": fill((AGENT_RULES / f"{kind}.md").read_text(encoding="utf-8"), variables,
-                           f"agent-rules/{kind}.md"),
+                           f"agent-rules/{kind}.md").rstrip("\n") + "\n" + retrieval_rule(profile),
         "agent_roster": "| role | takes | brief |\n|---|---|---|\n" + roster,
         "codex_routing": f"{models}. Use low reasoning effort for finding and summarising, medium by default, "
                          f"and a higher effort supported by the selected model when escalating.",
