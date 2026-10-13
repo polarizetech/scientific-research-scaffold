@@ -12,7 +12,7 @@ studies, simulators and tools in that shape and checks existing ones against it.
 |---|---|---|---|
 | is | one research question, and everything used to pursue it | one simulator, under adaptive preregistration | one job done for other repos: an instrument, a recorder, a service, a library |
 | holds | apps, sims still in development, datasets and calculators, each preregistered where it predicts | the model, its preregistrations, its assumptions | the tool, and the list of repos that depend on it and what they use |
-| versions | `apps/v1-*`, `apps/v2-*` folders, and tags | `model-vX.Y.Z` tags, all in one repo | `vX.Y.Z` tags, one version said the same everywhere |
+| versions | `apps/<slug>/v1`, `apps/<slug>/v2` folders, and tags | `model-vX.Y.Z` tags, all in one repo | `vX.Y.Z` tags, one version said the same everywhere |
 | findings go to | the shared research corpus, referenced by claim ID | the same | none: a tool holds no research |
 
 A sim starts as a folder inside the study that needs it, and moves to its own repo when a second study
@@ -52,7 +52,7 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 | `scaffold new sim <name> -q "..." [--inside STUDY]` | a new sim repo, or a sim folder inside a study |
 | `scaffold new tool <name> -j "..." [--inside STUDY\|WORKBENCH]` | a new tool repo, or a tool folder inside a study or workbench |
 | `scaffold new workbench <name> -q "..."` | a workbench: general tools, sims and apps, and studies as folders (`new study --inside`) |
-| `scaffold new app <slug> -q "..."` | the next `apps/vN-<slug>/` in the current study, registered in `STUDY.toml` |
+| `scaffold new app <slug> -q "..."` | the app's next version, `apps/<slug>/vN/`, in the current study, registered in `STUDY.toml` |
 | `scaffold new <app\|sim\|tool\|dataset\|calculator> ... --exploratory` | the same unit with no claim asked for: a build note in `SCOPE.toml`, and an exploratory label |
 | `scaffold promote-sim sims/<slug>` | split a sim out of a study into its own repo, keeping its history |
 | `scaffold check [PATH]` | check a repo against the protocol; nonzero exit on failure, for CI |

@@ -671,6 +671,16 @@ def container(path):
     raise Fail(f"{path} has no STUDY.toml or WORKBENCH.toml")
 
 
+def app_path(root, app):
+    """Where an app version is: its `path`, else apps/<slug>/<version>, else the earlier apps/<version>-<slug>
+    when that is the folder that exists."""
+    if app.get("path"):
+        return app["path"]
+    ver, slug = str(app.get("version", "")), str(app.get("slug", ""))
+    earlier = f"apps/{ver}-{slug}"
+    return earlier if (root / earlier).is_dir() and not (root / "apps" / slug / ver).is_dir() else f"apps/{slug}/{ver}"
+
+
 def new_app(a):
     study = Path(a.study).resolve()
     _, manifest_path = container(study)
@@ -678,9 +688,11 @@ def new_app(a):
     m = load_toml(manifest_path)
     profile = load_profile(profile_name(a.profile, m))
     apps = m.get("apps", [])
-    nums = [int(x["version"][1:]) for x in apps if re.fullmatch(r"v\d+", str(x.get("version", "")))]
+    # Each app has its own versions, numbered from v1: apps/<slug>/v1, apps/<slug>/v2.
+    nums = [int(x["version"][1:]) for x in apps
+            if x.get("slug") == a.name and re.fullmatch(r"v\d+", str(x.get("version", "")))]
     version = f"v{max(nums, default=0) + 1}"
-    dest = study / "apps" / f"{version}-{a.name}"
+    dest = study / "apps" / a.name / version
     if dest.exists():
         raise Fail(f"{dest} already exists")
     port = str(8300 + (sum(map(ord, m.get("name", ""))) % 50) * 10 + len(apps) % 10)
@@ -689,7 +701,7 @@ def new_app(a):
     render(TEMPLATES / "app", dest, v)
     (dest / "serve.py").chmod(0o755)
     if a.exploratory:
-        write_exploratory(dest, dest.name, a.question)
+        write_exploratory(dest, f"{a.name}/{version}", a.question)
     append_toml(manifest_path,
                 f"[[apps]]\nversion = {toml_str(version)}\nslug = {toml_str(a.name)}\n"
                 f"question = {toml_str(a.question)}\nstatus = \"active\"")
@@ -883,10 +895,10 @@ def check_repo(root, rep, nested=False, profile_override=None):
     if kind in CONTAINERS:
         for app in m.get("apps", []):
             ver, slug = str(app.get("version", "")), app.get("slug", "")
-            label = f"app {ver}-{slug}"
+            label = f"app {slug}/{ver}"
             rep.ok(bool(re.fullmatch(r"v\d+", ver)), f"{label}: version must look like v1, v2, ...")
             rep.ok(app.get("status", "active") in APP_STATUSES, f"{label}: status must be one of {APP_STATUSES}")
-            path = root / app.get("path", f"apps/{ver}-{slug}")
+            path = root / app_path(root, app)
             if rep.ok(path.exists(), f"{label}: {path.relative_to(root)} does not exist"):
                 rep.ok(any(path.glob("index.html")) or any(path.glob("*/index.html")),
                        f"{label}: no index.html in {path.relative_to(root)}", warn=True)

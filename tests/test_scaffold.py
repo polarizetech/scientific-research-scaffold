@@ -84,12 +84,31 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
         self.assertEqual(run("new", "app", "second", "-q", "Again?", "--study", str(repo))[0], 0)
         self.assertEqual(run("new", "sim", "model-a", "-q", "Sim", "--inside", str(repo))[0], 0)
-        self.assertTrue((repo / "apps" / "v2-second" / "index.html").exists())
+        self.assertTrue((repo / "apps" / "second" / "v1" / "index.html").exists())
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
         # an unfilled {{placeholder}}; the CI workflow's own `${{ secrets.X }}` is not one
         self.assertNotRegex("".join(p.read_text() for p in repo.rglob("*") if p.is_file() and ".git" not in p.parts),
                             r"\{\{\w+\}\}")
+
+    def test_an_app_has_its_own_versions(self):
+        repo = self.study()
+        for q in ("Look?", "Look again?"):
+            self.assertEqual(run("new", "app", "explorer", "-q", q, "--study", str(repo))[0], 0)
+        self.assertEqual(run("new", "app", "other", "-q", "Else?", "--study", str(repo))[0], 0)
+        for rel in ("apps/explorer/v1", "apps/explorer/v2", "apps/other/v1"):
+            self.assertTrue((repo / rel / "index.html").exists(), rel)
+        self.assertEqual([(a["slug"], a["version"]) for a in scaffold.load_toml(repo / "STUDY.toml")["apps"]],
+                         [("explorer", "v1"), ("explorer", "v2"), ("other", "v1")])
+        self.assertEqual(run("check", str(repo))[0], 0)
+
+    def test_the_earlier_app_layout_still_passes(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
+        (repo / "apps" / "explorer" / "v1").rename(repo / "apps" / "v1-explorer")
+        (repo / "apps" / "explorer").rmdir()
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
 
     def test_example_profile_has_no_workbench_resolver(self):
         repo = self.study("plain", profile="example")
@@ -714,7 +733,7 @@ jobs:
         self.assertEqual(run("new", "calculator", "spl", "-q", "Level sums", "--study", str(repo), "--exploratory")[0], 0)
         self.assertEqual(run("new", "sim", "cochlea", "-q", "A filterbank", "--inside", str(repo), "--exploratory")[0], 0)
         self.assertEqual(run("new", "tool", "meter", "-j", "Reads a level", "--inside", str(repo), "--exploratory")[0], 0)
-        for unit, doc in (("apps/v1-tone-sketch", "README.md"), ("datasets/assr", "README.md"),
+        for unit, doc in (("apps/tone-sketch/v1", "README.md"), ("datasets/assr", "README.md"),
                           ("calculators/spl", "CALCULATOR.md"), ("sims/cochlea", "README.md"), ("tools/meter", "README.md")):
             rec = scaffold.load_toml(repo / unit / "SCOPE.toml")
             self.assertEqual((rec["format"], rec["stage"]), (3, "exploratory"), unit)
@@ -722,7 +741,7 @@ jobs:
             self.assertRegex(rec["exploration"]["started"], r"^\d{4}-\d{2}-\d{2}$")
             self.assertEqual(rec["claim"]["text"], "", unit)  # no claim is asked for or invented
             self.assertIn("**Scope:** exploratory", (repo / unit / doc).read_text(), unit)
-        self.assertEqual(scaffold.load_toml(repo / "apps/v1-tone-sketch/SCOPE.toml")["exploration"]["building"],
+        self.assertEqual(scaffold.load_toml(repo / "apps/tone-sketch/v1/SCOPE.toml")["exploration"]["building"],
                          "A tone viewer")
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
@@ -903,7 +922,7 @@ jobs:
         (repo / ".gitmodules").write_text('[submodule "research"]\n\turl = https://github.com/polarizetech/research.git\n')
         code, out = run("check", str(repo))
         self.assertEqual(code, 1)
-        for needle in ("stage 'DONE'", "LICENSE is missing", "pinned to a tag", "apps/v1-gone", "is a submodule",
+        for needle in ("stage 'DONE'", "LICENSE is missing", "pinned to a tag", "apps/gone/v1", "is a submodule",
                        "README stage SKETCH disagrees"):
             self.assertIn(needle, out)
 

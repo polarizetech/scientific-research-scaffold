@@ -12,7 +12,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PORT = int(os.environ.get("PORT", "{{port}}"))
-DESIGN = Path(os.environ.get("DESIGN_DIR", HERE.parents[2] / "{{design_name}}")).expanduser()
+DESIGN = Path(os.environ.get("DESIGN_DIR", HERE.parents[3] / "{{design_name}}")).expanduser()
 
 # Named files only: never mount the design system's directory.
 DESIGN_PUBLIC = {
