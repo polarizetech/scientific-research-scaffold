@@ -16,6 +16,16 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.9.2
+
+**`scaffold update` does:** moves the CI ref to `v0.9.2`. `check` now finds apps laid out as
+`apps/<slug>/vN/` (from an entry's `path`, or at `apps/<slug>/<version>/`) as well as the earlier
+`apps/vN-<slug>/`.
+
+**The session does:**
+- Nothing is required. A study that already moved its apps to `apps/<slug>/vN/` and failed `check` in CI on
+  v0.9.1 passes once its CI ref is `v0.9.2`.
+
 ## v0.9.1
 
 **`scaffold update` does:** moves the CI ref to `v0.9.1`, and refreshes the scaffold section of `AGENTS.md`:

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.2 (2026-10-14)
 
 - **Apps are laid out as `apps/<slug>/vN/`**: one folder per app, one inside it per version, each app
   numbered from v1. `scaffold new app <slug>` gives a new slug its `v1` and an existing slug its next
