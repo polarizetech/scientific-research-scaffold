@@ -62,12 +62,21 @@ class Scaffold(unittest.TestCase):
 
     def study(self, name="colony", profile="polarizetech", visibility="private"):
         vis = ["--visibility", visibility] if visibility else []
-        code, out = run("new", "study", name, "-q", "Does it?", "--dir", str(self.tmp), "--profile", profile,
+        code, out = run("new", "study", name, "-q", "Does it?", "--hypothesis", "Does it?",
+                        "--dir", str(self.tmp), "--profile", profile,
                         *vis, "--no-git")
         self.assertEqual(code, 0, out)
         repo = self.tmp / name
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
         fake_kit(repo)
+        hypothesis = repo / "HYPOTHESIS.toml"
+        hypothesis.write_text(hypothesis.read_text()
+                              .replace('corpus_revision = "unverified"', 'corpus_revision = "0000000"')
+                              .replace('acceptance = "proposed"', 'acceptance = "accepted"')
+                              .replace("accepted_revision = 0", "accepted_revision = 1")
+                              .replace('accepted = ""', 'accepted = "2026-10-17"')
+                              .replace('goal = ""', 'goal = "Test the accepted hypothesis."')
+                              .replace('counts_against = ""', 'counts_against = "The accepted hypothesis fails."'))
         return repo
 
     def test_chatgpt_codex_plugin_matches_the_scaffold_release(self):
@@ -90,6 +99,209 @@ class Scaffold(unittest.TestCase):
         # an unfilled {{placeholder}}; the CI workflow's own `${{ secrets.X }}` is not one
         self.assertNotRegex("".join(p.read_text() for p in repo.rglob("*") if p.is_file() and ".git" not in p.parts),
                             r"\{\{\w+\}\}")
+
+    def test_hypothesis_map_links_units_and_detects_stale_snapshots(self):
+        words = 'If "signal A" changes, then signal B changes.\nSecond line stays verbatim.'
+        code, out = run("new", "study", "quoted", "-q", "Does it?", "--hypothesis", words,
+                        "--dir", str(self.tmp), "--profile", "polarizetech", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 0, out)
+        repo = self.tmp / "quoted"
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        fake_kit(repo)
+        hypothesis = repo / "HYPOTHESIS.toml"
+        self.assertEqual(scaffold.load_toml(hypothesis)["hypothesis"], words)
+        hypothesis.write_text(hypothesis.read_text()
+                              .replace('corpus_revision = "unverified"', 'corpus_revision = "0000000"')
+                              .replace('acceptance = "proposed"', 'acceptance = "accepted"')
+                              .replace("accepted_revision = 0", "accepted_revision = 1")
+                              .replace('accepted = ""', 'accepted = "2026-10-17"')
+                              .replace('goal = ""', 'goal = "Test the accepted hypothesis."')
+                              .replace('counts_against = ""', 'counts_against = "The accepted hypothesis fails."'))
+        code, out = run("new", "app", "explorer", "-q", "Look?", "--study", str(repo),
+                        "--hypothesis-element", "H1")
+        self.assertEqual(code, 0, out)
+        unit = scaffold.load_toml(hypothesis)["units"][0]
+        self.assertEqual(unit["elements"], ["H1"])
+        self.assertEqual(unit["element_revisions"], ["H1@1"])
+        scope_path = repo / "apps" / "explorer" / "v1" / "SCOPE.toml"
+        scope_record = scaffold.load_toml(scope_path)
+        self.assertEqual(scope_record["hypothesis_elements"], ["H1"])
+        self.assertEqual(scope_record["claim"]["counts_against"], "The accepted hypothesis fails.")
+        self.assertEqual(run("check", str(repo))[0], 0)
+
+        # Fingerprints catch a meaning change even if someone forgets to increment the element revision.
+        text = hypothesis.read_text().replace('statement = "If \\"signal A\\" changes, then signal B changes.\\nSecond line stays verbatim."',
+                                              'statement = "A changed statement."', 1)
+        hypothesis.write_text(text)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("hypothesis/evidence changed", out)
+        self.assertIn("queued for agent review", out)
+        code, out = run("sync-hypothesis", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("flagged for agent review", out)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("queued for agent review", out)
+
+        hypothesis.write_text(hypothesis.read_text().replace(
+            'disposition = ""', 'disposition = "new-version-or-experiment"'))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("disposition must be bound", out)
+
+        current = scaffold.load_toml(hypothesis)
+        element = current["elements"][0]
+        meaning_fp, evidence_fp = scaffold.hypothesis_fingerprints(element)
+        revisions = '["H1@1"]'
+        evidence_revisions = '["H1@unverified"]'
+        hypothesis.write_text(hypothesis.read_text()
+                              .replace("disposition_for_element_revisions = []",
+                                       f"disposition_for_element_revisions = {revisions}")
+                              .replace("disposition_for_accepted_revisions = []",
+                                       f"disposition_for_accepted_revisions = {revisions}")
+                              .replace("disposition_for_evidence_revisions = []",
+                                       f"disposition_for_evidence_revisions = {evidence_revisions}")
+                              .replace("disposition_for_element_fingerprints = []",
+                                       f'disposition_for_element_fingerprints = ["H1@{meaning_fp}"]')
+                              .replace("disposition_for_evidence_fingerprints = []",
+                                       f'disposition_for_evidence_fingerprints = ["H1@{evidence_fp}"]')
+                              .replace('disposition_for_corpus_revision = ""',
+                                       'disposition_for_corpus_revision = "0000000"'))
+        self.assertEqual(run("check", str(repo))[0], 0)
+
+    def test_hypothesis_elements_require_basis_evidence_or_falsifiable_goal(self):
+        repo = self.study()
+        hypothesis = repo / "HYPOTHESIS.toml"
+        hypothesis.write_text(hypothesis.read_text().replace('goal = "Test the accepted hypothesis."', 'goal = ""'))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("open requires a goal", out)
+
+        hypothesis.write_text(hypothesis.read_text()
+                              .replace('status = "open"', 'status = "established"')
+                              .replace('basis = "gap"', 'basis = "established"'))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("requires verified corpus evidence IDs", out)
+
+        hypothesis.write_text(hypothesis.read_text()
+                              .replace("evidence = []", 'evidence = ["CLAIM-1"]')
+                              .replace('evidence_revision = "unverified"', 'evidence_revision = "0000000"'))
+        research = repo / "RESEARCH.md"
+        research.write_text(research.read_text() + "\n| H1 | CLAIM-10 | different exact ID |\n")
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("evidence IDs must also be referenced", out)
+        research.write_text(research.read_text() + "| H1 | CLAIM-1 | exact ID |\n")
+        self.assertEqual(run("check", str(repo))[0], 0)
+
+    def test_agent_can_link_an_existing_exploratory_unit_and_sync_impacts(self):
+        repo = self.study()
+        code, out = run("new", "app", "legacy-viewer", "-q", "Inspect a compact view", "--study", str(repo),
+                        "--exploratory")
+        self.assertEqual(code, 0, out)
+        code, out = run("link-hypothesis", "apps/legacy-viewer/v1", "--path", str(repo),
+                        "--element", "H1", "--role", "Inspects the accepted seed element.")
+        self.assertEqual(code, 0, out)
+
+        hypothesis = scaffold.load_toml(repo / "HYPOTHESIS.toml")
+        unit = hypothesis["units"][0]
+        self.assertEqual(unit["elements"], ["H1"])
+        self.assertEqual(unit["role"], "Inspects the accepted seed element.")
+        self.assertEqual(unit["state"], "current")
+        scope_path = repo / "apps" / "legacy-viewer" / "v1" / "SCOPE.toml"
+        scope = scaffold.load_toml(scope_path)
+        self.assertEqual(scope["stage"], "exploratory")
+        self.assertEqual(scope["exploration"]["building"], "Inspect a compact view")
+        self.assertEqual(scope["hypothesis_elements"], ["H1"])
+        self.assertEqual(scope["hypothesis_review_state"], "current")
+
+        path = repo / "HYPOTHESIS.toml"
+        path.write_text(path.read_text().replace('statement = "Does it?"',
+                                                 'statement = "Its meaning changed."', 1))
+        self.assertEqual(run("sync-hypothesis", str(repo))[0], 0)
+        unit = scaffold.load_toml(path)["units"][0]
+        scope = scaffold.load_toml(scope_path)
+        self.assertEqual(unit["state"], "needs-review")
+        self.assertEqual(scope["hypothesis_review_state"], "needs-review")
+
+    def test_study_requires_hypothesis_and_unit_links_prevalidate_before_writes(self):
+        code, out = run("new", "study", "missing-hypothesis", "-q", "Does it?", "--dir", str(self.tmp),
+                        "--profile", "polarizetech", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 1)
+        self.assertIn("needs --hypothesis", out)
+        self.assertFalse((self.tmp / "missing-hypothesis").exists())
+
+        repo = self.study()
+        manifest_before = (repo / "STUDY.toml").read_text()
+        hypothesis_before = (repo / "HYPOTHESIS.toml").read_text()
+        code, out = run("new", "app", "bad-link", "-q", "Look?", "--study", str(repo),
+                        "--hypothesis-element", "NOPE")
+        self.assertEqual(code, 1)
+        self.assertIn("unknown hypothesis element", out)
+        self.assertFalse((repo / "apps" / "bad-link").exists())
+        self.assertEqual((repo / "STUDY.toml").read_text(), manifest_before)
+        self.assertEqual((repo / "HYPOTHESIS.toml").read_text(), hypothesis_before)
+
+        hypothesis = repo / "HYPOTHESIS.toml"
+        hypothesis.write_text(hypothesis.read_text()
+                              .replace('acceptance = "accepted"', 'acceptance = "proposed"')
+                              .replace("accepted_revision = 1", "accepted_revision = 0"))
+        code, out = run("new", "app", "unaccepted", "-q", "Look?", "--study", str(repo),
+                        "--hypothesis-element", "H1")
+        self.assertEqual(code, 1)
+        self.assertIn("not accepted by the person", out)
+        self.assertFalse((repo / "apps" / "unaccepted").exists())
+
+    def test_proposed_elements_and_blank_falsifiers_are_not_settled(self):
+        code, out = run("new", "study", "proposal", "-q", "Does it?", "--hypothesis", "Maybe it does.",
+                        "--dir", str(self.tmp), "--profile", "polarizetech", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 0, out)
+        repo = self.tmp / "proposal"
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        fake_kit(repo)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("needs the person's acceptance", out)
+        self.assertIn("requires what would count against it", out)
+        (repo / "STUDY.toml").write_text((repo / "STUDY.toml").read_text().replace(
+            'stage = "SKETCH"', 'stage = "PROBE"'))
+        (repo / "README.md").write_text((repo / "README.md").read_text().replace(
+            "**Stage:** SKETCH", "**Stage:** PROBE"))
+        self.assertEqual(run("check", str(repo))[0], 1)
+
+    def test_local_corpus_revision_reconciliation_stales_linked_units(self):
+        corpus = self.tmp / "research"
+        corpus.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=corpus, check=True)
+        (corpus / "claims.md").write_text("first\n")
+        subprocess.run(["git", "add", "."], cwd=corpus, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "first"], cwd=corpus, check=True)
+        rev1 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=corpus, capture_output=True,
+                              text=True, check=True).stdout.strip()
+
+        repo = self.study()
+        hypothesis = repo / "HYPOTHESIS.toml"
+        hypothesis.write_text(hypothesis.read_text().replace('corpus_revision = "0000000"',
+                                                              f'corpus_revision = "{rev1}"'))
+        self.assertEqual(run("new", "app", "linked", "-q", "Look?", "--study", str(repo),
+                             "--hypothesis-element", "H1")[0], 0)
+        self.assertEqual(run("check", str(repo))[0], 0)
+
+        (corpus / "claims.md").write_text("second\n")
+        subprocess.run(["git", "add", "."], cwd=corpus, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "second"], cwd=corpus, check=True)
+        rev2 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=corpus, capture_output=True,
+                              text=True, check=True).stdout.strip()
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("corpus checkout changed", out)
+
+        hypothesis.write_text(hypothesis.read_text().replace(rev1, rev2, 1))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("hypothesis/evidence changed", out)
 
     def test_an_app_has_its_own_versions(self):
         repo = self.study()
@@ -146,7 +358,8 @@ class Scaffold(unittest.TestCase):
         self.assertIn("shares its visibility", out)
 
     def test_there_is_no_default_profile(self):
-        code, out = run("new", "study", "orphan", "-q", "?", "--dir", str(self.tmp), "--no-git")
+        code, out = run("new", "study", "orphan", "-q", "?", "--hypothesis", "?",
+                        "--dir", str(self.tmp), "--no-git")
         self.assertEqual(code, 1)
         self.assertIn("no profile", out)
         self.assertIn("SCAFFOLD_PROFILE", out)
@@ -154,7 +367,8 @@ class Scaffold(unittest.TestCase):
 
     def test_profile_from_environment(self):
         os.environ["SCAFFOLD_PROFILE"] = "example"
-        code, out = run("new", "study", "envy", "-q", "?", "--dir", str(self.tmp), "--no-git")
+        code, out = run("new", "study", "envy", "-q", "?", "--hypothesis", "?",
+                        "--dir", str(self.tmp), "--no-git")
         self.assertEqual(code, 0, out)
         self.assertEqual(scaffold.load_toml(self.tmp / "envy" / "STUDY.toml")["profile"], "example")
 
@@ -676,7 +890,7 @@ jobs:
     def test_calculator_needs_reference_values_from_probe_on(self):
         repo = self.study()
         code, out = run("new", "calculator", "ear-canal-resonance", "-q", "Resonance from canal length",
-                        "--study", str(repo))
+                        "--study", str(repo), "--hypothesis-element", "H1")
         self.assertEqual(code, 0, out)
         calc = repo / "calculators" / "ear-canal-resonance"
         self.assertIn("Resonance from canal length", (calc / "CALCULATOR.md").read_text())
@@ -856,7 +1070,8 @@ jobs:
     def test_workbench_holds_studies_and_general_units(self):
         bench = self.workbench()
         self.assertEqual(run("check", str(bench))[0], 0)
-        code, out = run("new", "study", "hearing", "-q", "Does it?", "--inside", str(bench))
+        code, out = run("new", "study", "hearing", "-q", "Does it?", "--hypothesis", "Does it?",
+                        "--inside", str(bench))
         self.assertEqual(code, 0, out)
         study = bench / "studies" / "hearing"
         self.assertTrue((study / "STUDY.toml").exists())
@@ -878,7 +1093,8 @@ jobs:
 
     def test_workbench_checks_the_studies_inside_it(self):
         bench = self.workbench()
-        self.assertEqual(run("new", "study", "hearing", "-q", "Does it?", "--inside", str(bench))[0], 0)
+        self.assertEqual(run("new", "study", "hearing", "-q", "Does it?", "--hypothesis", "Does it?",
+                             "--inside", str(bench))[0], 0)
         manifest = bench / "studies" / "hearing" / "STUDY.toml"
         manifest.write_text(manifest.read_text().replace('stage = "SKETCH"', 'stage = "DONE"')
                             + '\n[[tools]]\nslug = "gone"\npath = "tools/gone"\n')
@@ -962,6 +1178,8 @@ jobs:
         self.assertEqual(m["consumers"][1]["uses"], ["one", "two", "three"])
         with self.assertRaises(scaffold.Fail):
             scaffold._mini_toml('uses = [\n  "never closed",\n', "open.toml")
+        with self.assertRaises(scaffold.Fail):
+            scaffold._mini_toml('state = "one"\nstate = "two"\n', "duplicate.toml")
 
     def test_mini_toml_matches_tomllib(self):
         try:

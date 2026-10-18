@@ -106,6 +106,41 @@ Experiments are registered in `EXPERIMENTS.md` (the prereg kit's register), not 
 **`path` overrides the default location.** It is how an existing repo adopts this protocol without moving
 working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
 
+### The study hypothesis map
+
+`HYPOTHESIS.toml` is the study-level reasoning and dependency map. Its `hypothesis` preserves the person's
+own wording. Specialist agents may propose how to decompose it, but the person settles the wording. Every
+`[[elements]]` entry is either a falsifiable `step` or an `integration` between two or more other elements.
+It has a revision, explicit `proposed`/`accepted` operator status and date, its evidence basis and the corpus
+revision at which that evidence was checked. A proposed element may remain incomplete at SKETCH, but cannot
+be mapped into a current unit or treated as settled; from PROBE onward it is a check failure.
+
+An element's evidence `basis` is `established`, `supported`, `derived`, `gap` or `exploratory`, using the
+scope protocol's meanings. Its workflow `status` is separately `established`, `open` or `exploratory`.
+Only established basis can have established status. Established, supported and derived elements cite verified
+evidence IDs that also appear in `RESEARCH.md`; derived elements state the derivation. Every element not
+established carries both a concrete goal and what would count against it. An unestablished connection between
+otherwise established steps is an `integration`; it is not hidden as an assumption.
+
+Each app version, local or external sim, dataset analysis and calculator has one `[[units]]` mapping in the
+same file. It names the element IDs the unit bears on, states the unit's role, and snapshots their element and
+evidence revisions plus content fingerprints. A changed hypothesis statement, falsifier, basis, evidence set or
+evidence revision therefore makes the unit stale even if someone forgets to increment a revision.
+
+`impact_management` records the study's standing policy. In `agent-managed` mode, the managing agent uses
+`scaffold link-hypothesis` to associate an existing unit after reading its scope, and `scaffold sync-hypothesis`
+to mark changed dependencies `needs-review`. Mechanical propagation does not require a new user decision and
+never rewrites a claim. The affected unit is reviewed before further scientific work; its agent either records a
+new version or experiment, reproduces established work, updates the design and preregisters it, or retires/closes
+the unit. A recorded disposition snapshots the exact changed revisions, fingerprints and corpus revision, so a
+later change cannot inherit it. In `person-managed` mode, an unresolved disposition remains a check failure.
+
+Every mapped local unit's `SCOPE.toml`, including an exploratory unit, carries the accepted IDs, revisions,
+fingerprints and review state. A testing unit may keep a narrower claim already settled with the person;
+association with a broader study element is provenance, not permission to replace that wording. Existing units
+start `unmapped`; an agent may link them only from their recorded scope and purpose, never from a folder name
+alone. From PROBE onward every unit must be mapped.
+
 ---
 
 ## 3. What a study contains
@@ -116,6 +151,7 @@ working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
   CLAUDE.md            "@AGENTS.md", the Claude Code adapter
   AGENTS.md            shared instructions for repository-aware assistants (managed in marked sections)
   STUDY.toml           the manifest (§ 2)
+  HYPOTHESIS.toml      the person's hypothesis, its steps/integrations and the unit dependency graph (§ 2)
   RESEARCH.md          which corpus project and claim IDs this study bears on
   EXPERIMENTS.md       the register of every preregistration, wherever it lives (the prereg kit's)
   LICENSE              code MIT; text and figures CC BY 4.0
@@ -445,8 +481,10 @@ to protect.
 
 ## 12. Research
 
-Findings are written to the **corpus**, in the study's project folder there. The study carries only
-`RESEARCH.md`: the corpus project, the claim prefix, and the claim IDs each unit bears on.
+Findings are written to the **corpus**, in the study's project folder there. Its README is the canonical
+project overview: it maps hypothesis elements to corpus claims, sources, decisions, units and experiments.
+The study carries `HYPOTHESIS.toml` as its current reasoning and dependency map, and `RESEARCH.md` as its
+link register: the corpus project, claim prefix, and claim/source IDs each element and unit bears on.
 
 - **A study never raises a claim's tier.** The corpus decides what a result does to a claim.
 - **The corpus is never a submodule of a study.** Two working copies of one corpus drift.
@@ -456,6 +494,21 @@ Findings are written to the **corpus**, in the study's project folder there. The
   with it before answering a question about science, the literature or evidence, to say so when its tools
   aren't available, and to skip it when the person says to. This is an instruction to sessions; `scaffold
   check` does not enforce it.
+- **Agents maintain and propagate the map.** The relevant specialist briefs propose a decomposition; the
+  `researcher` searches and verifies evidence for each element. An assistant never promotes an element to
+  `established` from memory and never invents the person's hypothesis or falsifier. Once elements are accepted,
+  the managing agent may derive unit links from recorded scope and purpose under the study's impact policy.
+  A changed element or evidence snapshot queues every affected unit for review, and the corpus project overview
+  is reconciled with the local link register.
+- **The corpus is the cross-study junction.** Its project overviews form a reverse impact index from claim/source
+  IDs to study repositories, hypothesis elements, units and experiments. An agent changing a finding, evidence
+  link or corpus claim follows those references into every affected study, runs `sync-hypothesis` in available
+  checkouts, and records unavailable checkouts as pending. A unit finding travels the same route: corpus first,
+  then the linked elements, then every unit that snapshots those elements.
+- **Corpus revisions are local reconciliation points.** `corpus_revision` records the commit or release used
+  for the evidence sweep. When the profile's corpus is present as a sibling checkout, `scaffold check` compares
+  that revision to its local HEAD without network access. A mismatch requires an evidence reconciliation; once
+  the recorded corpus revision changes, every linked unit's snapshot becomes stale.
 
 ---
 
@@ -485,7 +538,10 @@ and saying plainly what was not done.
 | README kind line matches the manifest | ✓ | ✓ | ✓ | ✓ |
 | `visibility` is decided (`public` or `private`, not `undecided`), with the date | ✓ | ✓ | | ✓ |
 | `CLAUDE.md`, `AGENTS.md`, `LICENSE` exist | ✓ | ✓ | | ✓ |
-| `EXPERIMENTS.md` and `RESEARCH.md` exist | ✓ | ✓ | | |
+| `HYPOTHESIS.toml`, `EXPERIMENTS.md` and `RESEARCH.md` exist | ✓ | | | |
+| every hypothesis element is established with linked evidence, or has a goal and counts-against | ✓ | | | |
+| every unit maps to elements and stale revision/evidence snapshots have an explicit disposition | ✓ | | | |
+| `EXPERIMENTS.md` and `RESEARCH.md` exist | | ✓ | | |
 | the manifest names a corpus project (`[corpus] project`) | ✓ | warning | | |
 | prereg kit installed (`.agents/kit_ap.lock` with the `prereg` module) | ✓ | ✓ | | |
 | every app and local sim listed exists; every app has `index.html` | ✓ | | | |

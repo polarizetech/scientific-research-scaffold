@@ -1,0 +1,30 @@
+# Study hypothesis map. The person's hypothesis is preserved verbatim; specialist agents decompose it
+# with the person into falsifiable steps and integrations. See PROTOCOL.md, "Study hypothesis map".
+format = 1
+hypothesis = {{hypothesis_toml}}
+corpus_revision = "unverified" # corpus commit/tag used for the latest evidence sweep
+impact_management = "agent-managed" # agents propagate impacts and queue affected units without routine prompts
+impact_management_decided = "{{date}}"
+
+[[elements]]
+id = "H1"
+kind = "step"                 # step | integration
+revision = 1                  # increment when statement, basis, goal or counts_against changes
+acceptance = "proposed"       # proposed | accepted; only the person accepts an element
+accepted_revision = 0         # equals revision after acceptance
+accepted = ""                 # YYYY-MM-DD of the person's acceptance
+statement = {{hypothesis_toml}}
+status = "open"               # established | open | exploratory
+basis = "gap"                 # established | supported | derived | gap | exploratory
+depends_on = []               # integrations name the element IDs they connect
+evidence = []                 # verified claim/source IDs in the corpus; required when established
+evidence_revision = "unverified" # corpus commit/tag at which this evidence set was checked
+derivation = ""               # required only when basis = "derived"
+goal = ""
+counts_against = ""
+
+# After the person accepts an element, `scaffold new app|sim|dataset|calculator --hypothesis-element H1`
+# adds [[units]] records here. For an existing unit, the managing agent uses `scaffold link-hypothesis` after
+# reading its recorded scope and purpose, and states the unit's role. Mapped records snapshot revisions,
+# acceptance, corpus revision and content fingerprints. `scaffold sync-hypothesis` flags changed snapshots for
+# agent review without rewriting a unit claim. A disposition, when recorded, binds the exact target values.

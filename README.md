@@ -35,10 +35,13 @@ cd ~/code
 export SCAFFOLD_PROFILE=example   # or your own; there is no built-in default (see below)
 
 scientific-research-scaffold/bin/scaffold new study reef-acoustics \
-  -q "Does the sound of a reef track its coral cover?" --visibility private
+  -q "Does the sound of a reef track its coral cover?" \
+  --hypothesis "A reef's soundscape predicts its ecological condition." --visibility private
 cd reef-acoustics
-../scientific-research-scaffold/bin/scaffold new app site-listener -q "Can a degraded site be heard?"
-../scientific-research-scaffold/bin/scaffold new sim sound-propagation -q "How reef sound carries" --inside .
+../scientific-research-scaffold/bin/scaffold new app site-listener \
+  -q "Can a degraded site be heard?" --hypothesis-element H1
+../scientific-research-scaffold/bin/scaffold new sim sound-propagation \
+  -q "How reef sound carries" --inside . --hypothesis-element H1
 ../scientific-research-scaffold/bin/scaffold check
 ```
 
@@ -48,12 +51,14 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 
 | command | does |
 |---|---|
-| `scaffold new study <name> -q "..." [--visibility public\|private]` | a new study repo |
-| `scaffold new sim <name> -q "..." [--inside STUDY]` | a new sim repo, or a sim folder inside a study |
+| `scaffold new study <name> -q "..." --hypothesis "..." [--visibility public\|private]` | a new study repo with its required hypothesis preserved verbatim |
+| `scaffold new sim <name> -q "..." [--inside STUDY] [--hypothesis-element H1]` | a new sim repo, or a sim folder linked into a study's hypothesis map |
 | `scaffold new tool <name> -j "..." [--inside STUDY\|WORKBENCH]` | a new tool repo, or a tool folder inside a study or workbench |
 | `scaffold new workbench <name> -q "..."` | a workbench: general tools, sims and apps, and studies as folders (`new study --inside`) |
-| `scaffold new app <slug> -q "..."` | the app's next version, `apps/<slug>/vN/`, in the current study, registered in `STUDY.toml` |
+| `scaffold new app <slug> -q "..." --hypothesis-element H1` | the app's next version, `apps/<slug>/vN/`, registered in `STUDY.toml` and linked in `HYPOTHESIS.toml` |
 | `scaffold new <app\|sim\|tool\|dataset\|calculator> ... --exploratory` | the same unit with no claim asked for: a build note in `SCOPE.toml`, and an exploratory label |
+| `scaffold link-hypothesis <unit-path> --element H1 --role "..."` | associate an existing unit with accepted elements and write the same provenance into its local scope |
+| `scaffold sync-hypothesis [PATH ...]` | detect changed element/evidence snapshots across affected studies and queue units for agent review without changing claims |
 | `scaffold promote-sim sims/<slug>` | split a sim out of a study into its own repo, keeping its history |
 | `scaffold check [PATH]` | check a repo against the protocol; nonzero exit on failure, for CI |
 | `scaffold status [PATH ...]` | one line per repo: kind, stage, scaffold release, CI ref, check result, pending update |

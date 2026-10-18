@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.11.0 (2026-10-18)
+
+- **Agent-managed impact propagation.** A study records whether hypothesis impacts are `agent-managed` or
+  `person-managed`. Under the default agent-managed policy, routine mapping and stale-impact queues do not ask
+  the person to repeat decisions: `scaffold link-hypothesis` records an existing unit's role and accepted element
+  links, and `scaffold sync-hypothesis` marks affected units `needs-review` without changing their claims.
+- **Local context for every unit.** Exploratory as well as testing units carry element IDs, accepted revisions,
+  fingerprints and review state in `SCOPE.toml`. Existing unit claims remain intact: association with a broader
+  study element does not silently replace a narrower accepted unit claim.
+- **Cross-study routing through the corpus.** The corpus project overview is the reverse impact index. An agent
+  changing a corpus claim, finding or evidence link follows its study/element references, synchronizes each
+  available study, and records any unavailable checkout as pending rather than asking the person to coordinate it.
+- Pins scientific-research-agents v0.6.0, whose researcher, analyst and computational-engineer briefs assign
+  ownership of that propagation to the agent making the evidence, finding or implementation change.
+- Generated CI checks out `v0.11.0`.
+
+## v0.10.0 (2026-10-17)
+
+- **Study-level hypothesis maps.** New studies require `--hypothesis` and carry the person's wording verbatim
+  in `HYPOTHESIS.toml`; the question is never silently substituted. Specialist agents propose falsifiable steps
+  and integrations, but each remains proposed until the person accepts its exact revision. Evidence status is
+  separate from established/supported/derived/gap/exploratory basis, and every non-established accepted element
+  has a real goal and falsifier rather than a placeholder.
+- **Hypothesis-to-unit dependency graph.** Each app version, sim, dataset analysis and calculator maps to one
+  or more accepted elements. `scaffold new ... --hypothesis-element ID` prevalidates before writing. Testing
+  scopes carry accepted element provenance. Changes require a disposition bound to the exact stale revisions,
+  fingerprints and corpus revision. Legacy mappings remain `unmapped` and become failures from PROBE onward.
+- **Corpus project overview and local reconciliation.** `RESEARCH.md` links the canonical corpus overview and
+  evidence IDs are matched exactly. The study rules use specialist profiles and the retrieval tool first.
+  Offline checks compare the recorded corpus revision with a sibling corpus checkout; reconciling a new revision
+  makes linked units stale for explicit review.
+- Generated CI checks out `v0.10.0`.
+
 ## v0.9.2 (2026-10-14)
 
 - **Apps are laid out as `apps/<slug>/vN/`**: one folder per app, one inside it per version, each app

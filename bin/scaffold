@@ -2,16 +2,18 @@
 # SPDX-License-Identifier: MIT
 """scaffold: create studies, sims and apps in the shape PROTOCOL.md describes, and check existing repos.
 
-  scaffold new study <name> --question "..." [--profile NAME] [--visibility public|private] [--dir PARENT]
+  scaffold new study <name> --question "..." --hypothesis "..." [--profile NAME] [--visibility public|private] [--dir PARENT]
   scaffold new workbench <name> --question "the theme"
   scaffold new study <name> --question "..." --inside WORKBENCH
   scaffold new sim <name> --question "..." [--inside STUDY|WORKBENCH]
   scaffold new tool <name> --job "..."
-  scaffold new app <slug> --question "..." [--study PATH]
-  scaffold new dataset <slug> --question "..." [--study PATH]
-  scaffold new calculator <slug> --question "what it computes" [--study PATH]
+  scaffold new app <slug> --question "..." [--study PATH] [--hypothesis-element ID ...]
+  scaffold new dataset <slug> --question "..." [--study PATH] [--hypothesis-element ID ...]
+  scaffold new calculator <slug> --question "what it computes" [--study PATH] [--hypothesis-element ID ...]
   scaffold new app|sim|tool|dataset|calculator ... --exploratory    no claim yet: a build note instead
   scaffold promote-sim <study>/sims/<slug>
+  scaffold link-hypothesis <unit-path> --element ID [--element ID ...] --role "..." [--path STUDY]
+  scaffold sync-hypothesis [PATH ...]
   scaffold check [PATH]
   scaffold status [PATH ...]
   scaffold update [PATH] [--apply] [--adopt FILE]
@@ -45,7 +47,7 @@ KINDS = ("study", "sim", "tool", "workbench")
 #: Kinds that hold units (apps, sims, tools, datasets, calculators), and so can be given to --inside.
 CONTAINERS = ("study", "workbench")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.9.2"
+SCAFFOLD_REF = "v0.11.0"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
@@ -102,6 +104,14 @@ OWNED = {
 STAGES = ("SKETCH", "PROBE", "BENCH", "SHIPPED")
 APP_STATUSES = ("active", "superseded", "abandoned")
 DATASET_STATUSES = ("candidate", "selected", "fetched")
+HYPOTHESIS_KINDS = ("step", "integration")
+HYPOTHESIS_STATUSES = ("established", "open", "exploratory")
+HYPOTHESIS_BASES = ("established", "supported", "derived", "gap", "exploratory")
+HYPOTHESIS_ACCEPTANCE = ("proposed", "accepted")
+HYPOTHESIS_UNIT_STATES = ("current", "needs-review", "unmapped")
+HYPOTHESIS_DISPOSITIONS = ("new-version-or-experiment", "reproduce-established",
+                           "update-design-and-preregister", "retire-or-close")
+HYPOTHESIS_IMPACT_MANAGEMENT = ("agent-managed", "person-managed")
 #: Work types that live as folders in a study and are registered in STUDY.toml (PROTOCOL.md, "Work types").
 UNITS = {"dataset": "datasets", "calculator": "calculators"}
 VISIBILITIES = ("public", "private")
@@ -165,6 +175,8 @@ def _mini_toml(text, path):
         elif "=" in line:
             k, v = line.split("=", 1)
             k, v = k.strip().strip('"'), v.strip()
+            if k in cur:
+                raise Fail(f"{path}:{n}: duplicate key {k!r}")
             if v.startswith("[") and _depth(v) > 0:
                 pending = (k, [v], n)
             else:
@@ -570,6 +582,286 @@ def append_toml(path, block):
     path.write_text(text + "\n\n" + block.strip("\n") + "\n", encoding="utf-8")
 
 
+def hypothesis_fingerprints(element):
+    """Short deterministic snapshots: scientific meaning separately from its corpus evidence set."""
+    meaning = {k: element.get(k) for k in
+               ("kind", "statement", "status", "basis", "depends_on", "derivation", "goal", "counts_against",
+                "acceptance", "accepted_revision", "accepted")}
+    evidence = {k: element.get(k) for k in ("evidence", "evidence_revision")}
+    digest = lambda value: hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+    return digest(meaning), digest(evidence)
+
+
+def hypothesis_unit_block(study, unit_path, element_ids, role=""):
+    """Prevalidate a unit link; return its graph block and testing-scope text before any writes."""
+    path = Path(study) / "HYPOTHESIS.toml"
+    if not path.exists():
+        raise Fail(f"{path} is missing; add the study hypothesis map before creating units")
+    h = load_toml(path)
+    elements = {str(e.get("id")): e for e in h.get("elements", [])}
+    unknown = [eid for eid in element_ids if eid not in elements]
+    if unknown:
+        raise Fail("unknown hypothesis element(s): " + ", ".join(unknown))
+    unaccepted = [eid for eid in element_ids
+                  if elements[eid].get("acceptance") != "accepted" or
+                  elements[eid].get("accepted_revision") != elements[eid].get("revision")]
+    if unaccepted:
+        raise Fail("hypothesis element(s) not accepted by the person at their current revision: "
+                   + ", ".join(unaccepted))
+    revisions = [f"{eid}@{elements[eid].get('revision', 1)}" for eid in element_ids]
+    evidence_revisions = [f"{eid}@{elements[eid].get('evidence_revision', 'unverified')}" for eid in element_ids]
+    fingerprints = [f"{eid}@{hypothesis_fingerprints(elements[eid])[0]}" for eid in element_ids]
+    evidence_fingerprints = [f"{eid}@{hypothesis_fingerprints(elements[eid])[1]}" for eid in element_ids]
+    accepted_revisions = [f"{eid}@{elements[eid].get('accepted_revision')}" for eid in element_ids]
+    state = "current" if element_ids else "unmapped"
+    scope_element = element_ids[0] if element_ids else ""
+    block = ("[[units]]\n"
+            f"path = {toml_str(str(unit_path))}\n"
+            f"elements = {toml_str(list(element_ids))}\n"
+            f"scope_element = {toml_str(scope_element)}\n"
+            f"role = {toml_str(role)}\n"
+            f"element_revisions = {toml_str(revisions)}\n"
+            f"accepted_revisions = {toml_str(accepted_revisions)}\n"
+            f"evidence_revisions = {toml_str(evidence_revisions)}\n"
+            f"element_fingerprints = {toml_str(fingerprints)}\n"
+            f"evidence_fingerprints = {toml_str(evidence_fingerprints)}\n"
+            f"corpus_revision = {toml_str(h.get('corpus_revision', 'unverified'))}\n"
+            f"state = {toml_str(state)}\n"
+            'disposition = ""\n'
+            "disposition_for_element_revisions = []\n"
+            "disposition_for_accepted_revisions = []\n"
+            "disposition_for_evidence_revisions = []\n"
+            "disposition_for_element_fingerprints = []\n"
+            "disposition_for_evidence_fingerprints = []\n"
+            'disposition_for_corpus_revision = ""')
+    scope = ""
+    if scope_element:
+        e = elements[scope_element]
+        manifest = load_toml(Path(study) / "STUDY.toml")
+        scope = (
+            "# Scope record (.agents/protocols/SCOPE_PROTOCOL.md), derived from the accepted study hypothesis.\n"
+            "format = 3\n"
+            f"unit = {toml_str(Path(unit_path).name)}\n"
+            'stage = "testing"\n'
+            f"corpus_project = {toml_str(manifest.get('corpus', {}).get('project', ''))}\n"
+            f"hypothesis_elements = {toml_str(list(element_ids))}\n"
+            f"hypothesis_scope_element = {toml_str(scope_element)}\n"
+            f"hypothesis_revisions = {toml_str(revisions)}\n"
+            f"hypothesis_accepted_revisions = {toml_str(accepted_revisions)}\n"
+            f"hypothesis_fingerprints = {toml_str(fingerprints)}\n\n"
+            'hypothesis_review_state = "current"\n\n'
+            "[exploration]\n"
+            'building = ""\nknown = ""\nstarted = ""\n\n'
+            "[claim]\n"
+            f"text = {toml_str(str(e.get('statement', '')))}\n"
+            f"counts_against = {toml_str(str(e.get('counts_against', '')))}\n"
+            f"decided = {toml_str(str(e.get('accepted', '')))}\n"
+            "experiments = []\n")
+    return block, scope
+
+
+def register_hypothesis_unit(study, block):
+    append_toml(Path(study) / "HYPOTHESIS.toml", block)
+
+
+def _array_table_matches(text, table):
+    """Return complete top-level [[table]] blocks without rewriting surrounding comments."""
+    return list(re.finditer(
+        rf"(?ms)^\[\[{re.escape(table)}\]\]\n.*?(?=^\[\[[A-Za-z0-9_.-]+\]\]|\Z)", text))
+
+
+def _replace_assignments(block, values):
+    """Replace or append scalar/flat-array assignments in one array-table block."""
+    lines = block.rstrip("\n").splitlines()
+    present = set()
+    for i, line in enumerate(lines):
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=", line)
+        if m and m.group(1) in values:
+            key = m.group(1)
+            lines[i] = f"{key} = {toml_str(values[key])}"
+            present.add(key)
+    for key, value in values.items():
+        if key not in present:
+            lines.append(f"{key} = {toml_str(value)}")
+    return "\n".join(lines) + "\n"
+
+
+def _replace_unit_block(path, unit_path, replacement=None, values=None):
+    text = path.read_text(encoding="utf-8")
+    for match in _array_table_matches(text, "units"):
+        block = match.group(0)
+        parsed = load_toml_text(block, path).get("units", [{}])[0]
+        if str(parsed.get("path", "")) != unit_path:
+            continue
+        new = replacement if replacement is not None else _replace_assignments(block, values or {})
+        path.write_text(text[:match.start()] + new + text[match.end():], encoding="utf-8")
+        return
+    raise Fail(f"{path}: no [[units]] record for {unit_path}")
+
+
+def load_toml_text(text, where="<text>"):
+    try:
+        import tomllib  # Python 3.11+
+        return tomllib.loads(text)
+    except ImportError:
+        return _mini_toml(text, where)
+
+
+def _hypothesis_snapshot(elements, element_ids):
+    by_id = {str(e.get("id")): e for e in elements}
+    revisions = [f"{eid}@{by_id[eid].get('revision')}" for eid in element_ids]
+    accepted = [f"{eid}@{by_id[eid].get('accepted_revision')}" for eid in element_ids]
+    evidence = [f"{eid}@{by_id[eid].get('evidence_revision')}" for eid in element_ids]
+    meaning_fp = [f"{eid}@{hypothesis_fingerprints(by_id[eid])[0]}" for eid in element_ids]
+    evidence_fp = [f"{eid}@{hypothesis_fingerprints(by_id[eid])[1]}" for eid in element_ids]
+    return revisions, accepted, evidence, meaning_fp, evidence_fp
+
+
+def _render_hypothesis_unit(unit_path, element_ids, scope_element, role, elements, corpus_revision):
+    revisions, accepted, evidence, meaning_fp, evidence_fp = _hypothesis_snapshot(elements, element_ids)
+    return (
+        "[[units]]\n"
+        f"path = {toml_str(unit_path)}\n"
+        f"elements = {toml_str(element_ids)}\n"
+        f"scope_element = {toml_str(scope_element)}\n"
+        f"role = {toml_str(role)}\n"
+        f"element_revisions = {toml_str(revisions)}\n"
+        f"accepted_revisions = {toml_str(accepted)}\n"
+        f"evidence_revisions = {toml_str(evidence)}\n"
+        f"element_fingerprints = {toml_str(meaning_fp)}\n"
+        f"evidence_fingerprints = {toml_str(evidence_fp)}\n"
+        f"corpus_revision = {toml_str(corpus_revision)}\n"
+        'state = "current"\n'
+        'disposition = ""\n'
+        "disposition_for_element_revisions = []\n"
+        "disposition_for_accepted_revisions = []\n"
+        "disposition_for_evidence_revisions = []\n"
+        "disposition_for_element_fingerprints = []\n"
+        "disposition_for_evidence_fingerprints = []\n"
+        'disposition_for_corpus_revision = ""\n')
+
+
+def _set_scope_hypothesis(scope_path, element_ids, scope_element, snapshot, review_state):
+    """Keep dependency provenance beside a unit for every stage without changing its claim."""
+    text = scope_path.read_text(encoding="utf-8")
+    keys = {
+        "hypothesis_elements": element_ids,
+        "hypothesis_scope_element": scope_element,
+        "hypothesis_revisions": snapshot[0],
+        "hypothesis_accepted_revisions": snapshot[1],
+        "hypothesis_fingerprints": snapshot[3],
+        "hypothesis_review_state": review_state,
+    }
+    lines = text.splitlines()
+    first_table = next((i for i, line in enumerate(lines) if re.match(r"^\[[^[]", line.strip())), len(lines))
+    head, tail = lines[:first_table], lines[first_table:]
+    names = set(keys)
+    head = [line for line in head if not (re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=", line) and
+                                         re.match(r"^([A-Za-z_][A-Za-z0-9_]*)", line).group(1) in names)]
+    while head and not head[-1].strip():
+        head.pop()
+    head.extend(["", *(f"{key} = {toml_str(value)}" for key, value in keys.items()), ""])
+    scope_path.write_text("\n".join([*head, *tail]).rstrip() + "\n", encoding="utf-8")
+
+
+def cmd_link_hypothesis(a):
+    """Record an agent-reviewed unit association and take its initial auditable snapshot."""
+    root = Path(a.path).resolve()
+    hypothesis_path = root / "HYPOTHESIS.toml"
+    if not hypothesis_path.exists():
+        raise Fail(f"{root} has no HYPOTHESIS.toml")
+    h = load_toml(hypothesis_path)
+    elements = h.get("elements", [])
+    by_id = {str(e.get("id")): e for e in elements}
+    element_ids = list(dict.fromkeys(a.element))
+    if not element_ids:
+        raise Fail("link-hypothesis needs at least one --element")
+    missing = [eid for eid in element_ids if eid not in by_id]
+    if missing:
+        raise Fail(f"unknown hypothesis element(s): {', '.join(missing)}")
+    unsettled = [eid for eid in element_ids if by_id[eid].get("acceptance") != "accepted" or
+                 by_id[eid].get("accepted_revision") != by_id[eid].get("revision")]
+    if unsettled:
+        raise Fail(f"hypothesis element(s) not accepted at their current revision: {', '.join(unsettled)}")
+    scope_element = a.scope_element or element_ids[0]
+    if scope_element not in element_ids:
+        raise Fail("--scope-element must also be named by --element")
+    role = a.role.strip()
+    if not role:
+        raise Fail("link-hypothesis needs --role so the unit's purpose is visible in the map")
+    scope_path = root / a.unit / "SCOPE.toml"
+    if not scope_path.exists():
+        raise Fail(f"{a.unit} has no SCOPE.toml; scope the unit before linking it")
+    block = _render_hypothesis_unit(a.unit, element_ids, scope_element, role, elements,
+                                    str(h.get("corpus_revision", "unverified")))
+    _replace_unit_block(hypothesis_path, a.unit, replacement=block)
+    _set_scope_hypothesis(scope_path, element_ids, scope_element,
+                          _hypothesis_snapshot(elements, element_ids), "current")
+    print(f"linked {a.unit} -> {', '.join(element_ids)} (scope {scope_element})")
+
+
+def _sync_hypothesis_one(a):
+    """Mechanically flag stale mappings; never silently accept a changed scientific meaning."""
+    root = Path(a.path).resolve()
+    hypothesis_path = root / "HYPOTHESIS.toml"
+    h = load_toml(hypothesis_path)
+    elements = h.get("elements", [])
+    by_id = {str(e.get("id")): e for e in elements}
+    corpus_revision = str(h.get("corpus_revision", ""))
+    changed = []
+    for unit in h.get("units", []):
+        unit_path = str(unit.get("path", ""))
+        ids = [str(x) for x in unit.get("elements", [])]
+        if not ids or any(eid not in by_id for eid in ids):
+            continue
+        expected = _hypothesis_snapshot(elements, ids)
+        stale = (unit.get("element_revisions", []) != expected[0] or
+                 unit.get("accepted_revisions", []) != expected[1] or
+                 unit.get("evidence_revisions", []) != expected[2] or
+                 unit.get("element_fingerprints", []) != expected[3] or
+                 unit.get("evidence_fingerprints", []) != expected[4] or
+                 unit.get("corpus_revision") != corpus_revision)
+        state = "needs-review" if stale else "current"
+        disposition_is_current = bool(unit.get("disposition")) and (
+            unit.get("disposition_for_element_revisions", []) == expected[0] and
+            unit.get("disposition_for_accepted_revisions", []) == expected[1] and
+            unit.get("disposition_for_evidence_revisions", []) == expected[2] and
+            unit.get("disposition_for_element_fingerprints", []) == expected[3] and
+            unit.get("disposition_for_evidence_fingerprints", []) == expected[4] and
+            unit.get("disposition_for_corpus_revision") == corpus_revision)
+        if stale and (unit.get("state") != state or (unit.get("disposition") and not disposition_is_current)):
+            _replace_unit_block(hypothesis_path, unit_path, values={
+                "state": state,
+                "disposition": "",
+                "disposition_for_element_revisions": [],
+                "disposition_for_accepted_revisions": [],
+                "disposition_for_evidence_revisions": [],
+                "disposition_for_element_fingerprints": [],
+                "disposition_for_evidence_fingerprints": [],
+                "disposition_for_corpus_revision": "",
+            })
+            changed.append(unit_path)
+        scope_path = root / unit_path / "SCOPE.toml"
+        if scope_path.exists():
+            snapshot = (unit.get("element_revisions", []), unit.get("accepted_revisions", []),
+                        unit.get("evidence_revisions", []), unit.get("element_fingerprints", []),
+                        unit.get("evidence_fingerprints", []))
+            _set_scope_hypothesis(scope_path, ids, str(unit.get("scope_element", "")), snapshot, state)
+    if changed:
+        print("flagged for agent review: " + ", ".join(changed))
+    else:
+        print("hypothesis links are synchronized; no new impacts")
+
+
+def cmd_sync_hypothesis(a):
+    """Synchronize one or many affected studies selected through the corpus reverse index."""
+    paths = a.paths or ["."]
+    for raw in paths:
+        if len(paths) > 1:
+            print(f"{Path(raw).resolve()}:")
+        _sync_hypothesis_one(argparse.Namespace(path=raw))
+
+
 # ------------------------------------------------------------------------------------------ new
 
 def cmd_new(a):
@@ -593,6 +885,10 @@ def cmd_new(a):
             raise Fail("a tool has a --job (what it does for other repos), not a --question: it holds no research")
     elif not a.question:
         raise Fail(f"a {a.kind} needs --question")
+    if a.kind == "study" and not a.hypothesis:
+        raise Fail("a study needs --hypothesis in the person's own words; the scaffold does not substitute its question")
+    if a.hypothesis and a.kind != "study":
+        raise Fail("--hypothesis is only for a study")
     if inside and a.visibility:
         raise Fail(f"--visibility is for a repo; a {a.kind} inside a {host[0]} shares its visibility")
     if inside:
@@ -604,8 +900,13 @@ def cmd_new(a):
         dest = Path(a.dir).resolve() / a.name
     if dest.exists() and any(dest.iterdir()):
         raise Fail(f"{dest} already exists and is not empty")
+    hypothesis_link, hypothesis_scope = None, ""
+    if inside and host[0] == "study" and a.kind == "sim":
+        hypothesis_link, hypothesis_scope = hypothesis_unit_block(
+            inside, f"sims/{a.name}", a.hypothesis_element or [], a.question or "")
     v = template_vars(profile, a.name, a.question or a.job, visibility=a.visibility or UNDECIDED,
                       visibility_decided=_dt.date.today().isoformat() if a.visibility else "")
+    v["hypothesis_toml"] = toml_str(a.hypothesis or "")
     v["job"] = v["question"]
     skip = ()
     if a.kind == "study" and not profile.get("workbench", {}).get("repo"):
@@ -620,6 +921,8 @@ def cmd_new(a):
         render(TEMPLATES / a.kind, dest, v, skip=skip)
     if not inside:
         render_agents(dest, a.kind, v, profile)
+    if hypothesis_scope and not a.exploratory:
+        (dest / "SCOPE.toml").write_text(hypothesis_scope, encoding="utf-8")
     if a.exploratory:
         write_exploratory(dest, a.name, a.question or a.job)
     print(f"created {a.kind} {dest}" + (" (exploratory: no claim yet)" if a.exploratory else ""))
@@ -630,6 +933,8 @@ def cmd_new(a):
             kept = [ln for ln in manifest.read_text(encoding="utf-8").splitlines() if not ln.startswith("visibility")]
             manifest.write_text("\n".join(kept) + "\n", encoding="utf-8")
         append_toml(host[1], f'[[{folder}]]\nslug = {toml_str(a.name)}\npath = {toml_str(f"{folder}/{a.name}")}')
+        if hypothesis_link:
+            register_hypothesis_unit(inside, hypothesis_link)
         print(f"  registered in {host[1]}")
         return
     write_licence(dest, profile)
@@ -695,16 +1000,21 @@ def new_app(a):
     dest = study / "apps" / a.name / version
     if dest.exists():
         raise Fail(f"{dest} already exists")
+    hypothesis_link, hypothesis_scope = hypothesis_unit_block(
+        study, dest.relative_to(study).as_posix(), a.hypothesis_element or [], a.question or "")
     port = str(8300 + (sum(map(ord, m.get("name", ""))) % 50) * 10 + len(apps) % 10)
     v = template_vars(profile, m.get("name", study.name), a.question, title=f"{a.name} ({version})",
                       version=version, port=port)
     render(TEMPLATES / "app", dest, v)
     (dest / "serve.py").chmod(0o755)
+    if hypothesis_scope and not a.exploratory:
+        (dest / "SCOPE.toml").write_text(hypothesis_scope, encoding="utf-8")
     if a.exploratory:
         write_exploratory(dest, f"{a.name}/{version}", a.question)
     append_toml(manifest_path,
                 f"[[apps]]\nversion = {toml_str(version)}\nslug = {toml_str(a.name)}\n"
                 f"question = {toml_str(a.question)}\nstatus = \"active\"")
+    register_hypothesis_unit(study, hypothesis_link)
     print(f"created app {dest}\n  run: python3 {dest.relative_to(study)}/serve.py")
 
 
@@ -718,12 +1028,17 @@ def new_unit(a):
     dest = study / folder / a.name
     if dest.exists():
         raise Fail(f"{dest} already exists")
+    hypothesis_link, hypothesis_scope = hypothesis_unit_block(
+        study, f"{folder}/{a.name}", a.hypothesis_element or [], a.question or "")
     profile = load_profile(profile_name(a.profile, m))
     v = template_vars(profile, m.get("name", study.name), a.question, slug=a.name)
     render(TEMPLATES / "units" / a.kind, dest, v)
+    if hypothesis_scope and not a.exploratory:
+        (dest / "SCOPE.toml").write_text(hypothesis_scope, encoding="utf-8")
     if a.exploratory:
         write_exploratory(dest, a.name, a.question)
     append_toml(manifest_path, f"[[{folder}]]\nslug = {toml_str(a.name)}\npath = {toml_str(f'{folder}/{a.name}')}")
+    register_hypothesis_unit(study, hypothesis_link)
     print(f"created {a.kind} {dest}\n  registered in {manifest_path}")
 
 
@@ -833,6 +1148,8 @@ def check_repo(root, rep, nested=False, profile_override=None):
     if kind == "sim":
         model = m.get("model", "model")
         rep.ok((root / model).exists(), f"{where}model path {model!r} does not exist (set model = in SIM.toml)")
+    if kind == "study":
+        check_hypothesis(root, rep, where, profile)
     if nested and kind != "study":
         return
 
@@ -953,6 +1270,244 @@ def check_repo(root, rep, nested=False, profile_override=None):
                 continue
     rep.ok(not hits, f"{len(hits)} absolute home-directory path(s): " + ", ".join(hits[:5])
            + (" ..." if len(hits) > 5 else ""), warn=True)
+
+
+def valid_research_revision(value):
+    return value in ("unverified", "unresolved", "unassessed") or bool(
+        re.fullmatch(r"(?:[0-9a-f]{7,40}|v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)", value))
+
+
+def research_mentions(text, ref):
+    """Exact Markdown token/cell match, avoiding substring matches between evidence IDs."""
+    edge = r"[\s|`,;()\[\]]"
+    return bool(re.search(rf"(?:^|{edge}){re.escape(ref)}(?:$|{edge})", text, re.M))
+
+
+def check_hypothesis(root, rep, where="", profile=None):
+    """Check the study-level map from the person's hypothesis to evidence-backed or falsifiable elements."""
+    path = root / "HYPOTHESIS.toml"
+    if not rep.ok(path.exists(), f"{where}HYPOTHESIS.toml is missing"):
+        return
+    try:
+        h = load_toml(path)
+    except Exception as e:  # noqa: BLE001 - report any parse error as a failure
+        rep.ok(False, f"{where}HYPOTHESIS.toml does not parse: {e}")
+        return
+    rep.ok(h.get("format") == 1, f"{where}HYPOTHESIS.toml format must be 1")
+    rep.ok(bool(str(h.get("hypothesis", "")).strip()), f"{where}HYPOTHESIS.toml has no hypothesis")
+    study = load_toml(root / "STUDY.toml")
+    stage = study.get("stage")
+    corpus_revision = str(h.get("corpus_revision", ""))
+    impact_management = str(h.get("impact_management", "person-managed"))
+    rep.ok(impact_management in HYPOTHESIS_IMPACT_MANAGEMENT,
+           f"{where}HYPOTHESIS.toml impact_management must be one of {HYPOTHESIS_IMPACT_MANAGEMENT}")
+    if "impact_management" not in h:
+        rep.ok(False, f"{where}HYPOTHESIS.toml has no impact-management policy; defaulting to person-managed",
+               warn=(stage == "SKETCH"))
+    rep.ok(impact_management != "agent-managed" or
+           bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(h.get("impact_management_decided", "")))),
+           f"{where}agent-managed impact handling needs impact_management_decided (YYYY-MM-DD)")
+    rep.ok(valid_research_revision(corpus_revision),
+           f"{where}HYPOTHESIS.toml corpus_revision must be a commit/tag or an unresolved sentinel")
+    rep.ok(corpus_revision not in ("unverified", "unresolved", "unassessed"),
+           f"{where}HYPOTHESIS.toml corpus evidence has not been reconciled to a revision",
+           warn=(stage == "SKETCH"))
+    corpus_repo = (profile or {}).get("corpus", {}).get("repo", "")
+    corpus_checkout = root.parent / repo_basename(corpus_repo)
+    if corpus_repo and (corpus_checkout / ".git").exists() and corpus_revision not in (
+            "unverified", "unresolved", "unassessed"):
+        code, resolved, _ = git("rev-parse", f"{corpus_revision}^{{commit}}", cwd=corpus_checkout)
+        code_head, head, _ = git("rev-parse", "HEAD", cwd=corpus_checkout)
+        rep.ok(not code and not code_head and resolved == head,
+               f"{where}corpus checkout changed ({head[:12] if head else 'unknown'}); reconcile evidence and "
+               "update corpus_revision", warn=(stage == "SKETCH"))
+    elements = h.get("elements", [])
+    if not rep.ok(bool(elements), f"{where}HYPOTHESIS.toml has no [[elements]]"):
+        return
+    ids = [str(e.get("id", "")) for e in elements]
+    rep.ok(len(set(ids)) == len(ids), f"{where}HYPOTHESIS.toml element IDs are not unique")
+    known = set(ids)
+    research = (root / "RESEARCH.md").read_text(encoding="utf-8") if (root / "RESEARCH.md").exists() else ""
+    for e in elements:
+        eid = str(e.get("id", "?"))
+        label = f"{where}hypothesis element {eid}"
+        rep.ok(bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", eid)),
+               f"{label}: id must start with a letter and contain only letters, numbers, _ or -")
+        kind = e.get("kind")
+        status = e.get("status")
+        basis = e.get("basis")
+        revision = e.get("revision")
+        acceptance = e.get("acceptance")
+        accepted_revision = e.get("accepted_revision")
+        rep.ok(kind in HYPOTHESIS_KINDS, f"{label}: kind must be one of {HYPOTHESIS_KINDS}")
+        rep.ok(status in HYPOTHESIS_STATUSES, f"{label}: status must be one of {HYPOTHESIS_STATUSES}")
+        rep.ok(basis in HYPOTHESIS_BASES, f"{label}: basis must be one of {HYPOTHESIS_BASES}")
+        rep.ok(acceptance in HYPOTHESIS_ACCEPTANCE,
+               f"{label}: acceptance must be one of {HYPOTHESIS_ACCEPTANCE}", warn=(stage == "SKETCH"))
+        rep.ok(status != "established" or basis == "established",
+               f"{label}: established status requires established basis")
+        rep.ok(status != "exploratory" or basis == "exploratory",
+               f"{label}: exploratory status requires exploratory basis")
+        rep.ok(status != "open" or basis in ("supported", "derived", "gap"),
+               f"{label}: open status requires supported, derived or gap basis")
+        rep.ok(isinstance(revision, int) and revision >= 1, f"{label}: revision must be an integer >= 1")
+        accepted_now = acceptance == "accepted" and accepted_revision == revision
+        rep.ok(acceptance != "accepted" or accepted_revision == revision,
+               f"{label}: accepted_revision must equal revision after the person's acceptance")
+        rep.ok(acceptance != "accepted" or bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(e.get("accepted", "")))),
+               f"{label}: accepted must record the person's acceptance date (YYYY-MM-DD)")
+        rep.ok(accepted_now, f"{label}: proposed or changed revision still needs the person's acceptance",
+               warn=(stage == "SKETCH"))
+        evidence_revision = str(e.get("evidence_revision", ""))
+        rep.ok(bool(evidence_revision.strip()), f"{label}: evidence_revision is empty")
+        rep.ok(bool(str(e.get("statement", "")).strip()), f"{label}: statement is empty")
+        deps = e.get("depends_on", [])
+        rep.ok(isinstance(deps, list), f"{label}: depends_on must be an array")
+        if isinstance(deps, list):
+            rep.ok(eid not in deps, f"{label}: cannot depend on itself")
+            missing = [d for d in deps if d not in known]
+            rep.ok(not missing, f"{label}: unknown depends_on IDs: {', '.join(map(str, missing))}")
+            if kind == "integration":
+                rep.ok(len(deps) >= 2, f"{label}: an integration must connect at least two element IDs")
+        evidence = e.get("evidence", [])
+        rep.ok(isinstance(evidence, list), f"{label}: evidence must be an array")
+        if basis in ("established", "supported", "derived"):
+            rep.ok(bool(evidence), f"{label}: {basis} requires verified corpus evidence IDs",
+                   warn=(not accepted_now and stage == "SKETCH"))
+            rep.ok(valid_research_revision(evidence_revision) and evidence_revision not in
+                   ("unverified", "unresolved", "unassessed"),
+                   f"{label}: {basis} requires a verified evidence_revision",
+                   warn=(not accepted_now and stage == "SKETCH"))
+        if basis == "derived":
+            rep.ok(bool(str(e.get("derivation", "")).strip()), f"{label}: derived basis requires a derivation")
+        if status != "established":
+            rep.ok(bool(str(e.get("goal", "")).strip()), f"{label}: {status} requires a goal",
+                   warn=(not accepted_now and stage == "SKETCH"))
+            rep.ok(bool(str(e.get("counts_against", "")).strip()),
+                   f"{label}: {status} requires what would count against it",
+                   warn=(not accepted_now and stage == "SKETCH"))
+        if isinstance(evidence, list):
+            unlinked = [str(ref) for ref in evidence if not str(ref).strip() or
+                        not research_mentions(research, str(ref))]
+            rep.ok(not unlinked, f"{label}: evidence IDs must also be referenced in RESEARCH.md: "
+                   + ", ".join(unlinked))
+
+    expected = set()
+    aliases = {}
+    for app in study.get("apps", []):
+        actual = app_path(root, app)
+        expected.add(actual)
+        ver, slug = str(app.get("version", "")), str(app.get("slug", ""))
+        aliases[f"apps/{slug}/{ver}"] = actual
+        aliases[f"apps/{ver}-{slug}"] = actual
+    for sim in study.get("sims", []):
+        expected.add(f"repo:{sim.get('repo')}@{sim.get('ref')}" if sim.get("repo") else
+                     sim.get("path", f"sims/{sim.get('slug')}"))
+    for folder in ("datasets", "calculators"):
+        for unit in study.get(folder, []):
+            expected.add(unit.get("path", f"{folder}/{unit.get('slug')}"))
+    mappings = h.get("units", [])
+    mapped_paths = [aliases.get(str(u.get("path", "")), str(u.get("path", ""))) for u in mappings]
+    rep.ok(len(mapped_paths) == len(set(mapped_paths)), f"{where}HYPOTHESIS.toml unit paths are not unique")
+    by_path = {aliases.get(str(u.get("path", "")), str(u.get("path", ""))): u for u in mappings}
+    missing_units = sorted(expected - set(mapped_paths))
+    extra_units = sorted(set(mapped_paths) - expected)
+    # SKETCH migration may expose unresolved legacy units without inventing links. By PROBE every unit is linked.
+    rep.ok(not missing_units, f"{where}units missing from HYPOTHESIS.toml: {', '.join(missing_units)}",
+           warn=(stage == "SKETCH"))
+    rep.ok(not extra_units, f"{where}HYPOTHESIS.toml maps unknown units: {', '.join(extra_units)}")
+    for unit_path in sorted(expected & set(mapped_paths)):
+        u = by_path[unit_path]
+        label = f"{where}hypothesis unit {unit_path}"
+        state = u.get("state")
+        disposition = str(u.get("disposition", ""))
+        linked = [str(x) for x in u.get("elements", [])]
+        scope_element = str(u.get("scope_element", ""))
+        role = str(u.get("role", ""))
+        rep.ok(state in HYPOTHESIS_UNIT_STATES, f"{label}: state must be one of {HYPOTHESIS_UNIT_STATES}")
+        unknown = [eid for eid in linked if eid not in known]
+        rep.ok(not unknown, f"{label}: unknown element IDs: {', '.join(unknown)}")
+        if not linked or state == "unmapped":
+            rep.ok(False, f"{label}: unmapped; settle its hypothesis element links without inventing them",
+                   warn=(stage == "SKETCH"))
+            continue
+        unaccepted = [eid for eid in linked if eid in known and (
+            next(e for e in elements if str(e.get("id")) == eid).get("acceptance") != "accepted" or
+            next(e for e in elements if str(e.get("id")) == eid).get("accepted_revision") !=
+            next(e for e in elements if str(e.get("id")) == eid).get("revision"))]
+        rep.ok(not unaccepted, f"{label}: cannot derive scope from proposed/unaccepted elements: "
+               + ", ".join(unaccepted))
+        rep.ok(scope_element in linked, f"{label}: scope_element must name one linked element")
+        rep.ok(bool(role.strip()), f"{label}: role must say how the unit bears on its linked elements",
+               warn=(stage == "SKETCH"))
+        expected_element_revs = [f"{eid}@{next(e for e in elements if str(e.get('id')) == eid).get('revision')}"
+                                 for eid in linked if eid in known]
+        expected_accepted_revs = [
+            f"{eid}@{next(e for e in elements if str(e.get('id')) == eid).get('accepted_revision')}"
+            for eid in linked if eid in known]
+        expected_evidence_revs = [
+            f"{eid}@{next(e for e in elements if str(e.get('id')) == eid).get('evidence_revision')}"
+            for eid in linked if eid in known]
+        expected_fingerprints = [
+            f"{eid}@{hypothesis_fingerprints(next(e for e in elements if str(e.get('id')) == eid))[0]}"
+            for eid in linked if eid in known]
+        expected_evidence_fingerprints = [
+            f"{eid}@{hypothesis_fingerprints(next(e for e in elements if str(e.get('id')) == eid))[1]}"
+            for eid in linked if eid in known]
+        stale = u.get("element_revisions", []) != expected_element_revs or \
+            u.get("accepted_revisions", []) != expected_accepted_revs or \
+            u.get("evidence_revisions", []) != expected_evidence_revs or \
+            u.get("element_fingerprints", []) != expected_fingerprints or \
+            u.get("evidence_fingerprints", []) != expected_evidence_fingerprints or \
+            u.get("corpus_revision") != corpus_revision
+        if stale:
+            rep.ok(state == "needs-review", f"{label}: hypothesis/evidence changed; state must be 'needs-review'")
+            if disposition:
+                rep.ok(disposition in HYPOTHESIS_DISPOSITIONS,
+                       f"{label}: disposition must be one of: {', '.join(HYPOTHESIS_DISPOSITIONS)}")
+                rep.ok(u.get("disposition_for_element_revisions", []) == expected_element_revs and
+                       u.get("disposition_for_accepted_revisions", []) == expected_accepted_revs and
+                       u.get("disposition_for_evidence_revisions", []) == expected_evidence_revs and
+                       u.get("disposition_for_element_fingerprints", []) == expected_fingerprints and
+                       u.get("disposition_for_evidence_fingerprints", []) == expected_evidence_fingerprints and
+                       u.get("disposition_for_corpus_revision") == corpus_revision,
+                       f"{label}: disposition must be bound to the exact current revision and fingerprints")
+            elif impact_management == "agent-managed":
+                rep.ok(False, f"{label}: queued for agent review; run sync-hypothesis after relevant changes",
+                       warn=True)
+            else:
+                rep.ok(False, f"{label}: stale link requires disposition: {', '.join(HYPOTHESIS_DISPOSITIONS)}")
+        else:
+            rep.ok(state == "current", f"{label}: snapshots match; state must be 'current'")
+            rep.ok(not disposition, f"{label}: current link must have an empty disposition")
+            rep.ok(not any((u.get("disposition_for_element_revisions", []),
+                            u.get("disposition_for_accepted_revisions", []),
+                            u.get("disposition_for_evidence_revisions", []),
+                            u.get("disposition_for_element_fingerprints", []),
+                            u.get("disposition_for_evidence_fingerprints", []),
+                            u.get("disposition_for_corpus_revision", ""))),
+                   f"{label}: current link must not retain stale disposition bindings")
+        if not unit_path.startswith("repo:"):
+            scope_path = root / unit_path / "SCOPE.toml"
+            if rep.ok(scope_path.exists(), f"{label}: mapped local unit has no SCOPE.toml",
+                      warn=(stage == "SKETCH")):
+                try:
+                    scope = load_toml(scope_path)
+                except Exception as e:  # noqa: BLE001
+                    rep.ok(False, f"{label}: SCOPE.toml does not parse: {e}")
+                    scope = {}
+                rep.ok(scope.get("hypothesis_elements", []) == linked,
+                       f"{label}: SCOPE.toml hypothesis_elements do not match the graph")
+                rep.ok(scope.get("hypothesis_scope_element") == scope_element,
+                       f"{label}: SCOPE.toml hypothesis_scope_element does not match the graph")
+                rep.ok(scope.get("hypothesis_revisions", []) == u.get("element_revisions", []),
+                       f"{label}: SCOPE.toml revisions do not match the unit snapshot")
+                rep.ok(scope.get("hypothesis_accepted_revisions", []) == u.get("accepted_revisions", []),
+                       f"{label}: SCOPE.toml accepted revisions do not match the unit snapshot")
+                rep.ok(scope.get("hypothesis_fingerprints", []) == u.get("element_fingerprints", []),
+                       f"{label}: SCOPE.toml fingerprints do not match the unit snapshot")
+                rep.ok(scope.get("hypothesis_review_state") == state,
+                       f"{label}: SCOPE.toml review state does not match the graph")
 
 
 def adopted_unit(root, entry, folder, manifest, where, rep):
@@ -1448,10 +2003,13 @@ def main(argv=None):
     n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
     n.add_argument("--question", "-q", help="the question it asks (or what a sim simulates; with --exploratory, "
                                             "what is being built)")
+    n.add_argument("--hypothesis", help="for a study: the person's hypothesis, preserved verbatim in HYPOTHESIS.toml")
     n.add_argument("--job", "-j", help="for a tool: what it does for the repos that use it")
     n.add_argument("--exploratory", action="store_true",
                    help="for a unit: no claim yet. --question (or --job) says what is being built; the unit is "
                         "labelled exploratory and nothing it shows is a finding")
+    n.add_argument("--hypothesis-element", action="append", default=[], metavar="ID",
+                   help="accepted study element this unit derives from; repeat for more (the first is its scope)")
     n.add_argument("--profile", help="profile name (default: $SCAFFOLD_PROFILE; there is no built-in default)")
     n.add_argument("--visibility", choices=VISIBILITIES,
                    help="record a visibility decision already made (default: left undecided; check fails until set)")
@@ -1467,6 +2025,19 @@ def main(argv=None):
     p.add_argument("path")
     p.add_argument("--dir", default="..", help="parent directory for the new repo")
     p.set_defaults(fn=cmd_promote)
+
+    lh = sub.add_parser("link-hypothesis", help="associate an existing study unit with accepted hypothesis elements")
+    lh.add_argument("unit", help="registered unit path, for example apps/listener/v1")
+    lh.add_argument("--element", action="append", default=[], metavar="ID",
+                    help="accepted element the unit bears on; repeat for more")
+    lh.add_argument("--scope-element", metavar="ID", help="primary element for the unit's local scope")
+    lh.add_argument("--role", required=True, help="one sentence saying how this unit bears on the elements")
+    lh.add_argument("--path", default=".", help="study root (default: current directory)")
+    lh.set_defaults(fn=cmd_link_hypothesis)
+
+    sh = sub.add_parser("sync-hypothesis", help="flag stale unit links across one or more affected studies")
+    sh.add_argument("paths", nargs="*", help="affected study roots selected from corpus reverse references")
+    sh.set_defaults(fn=cmd_sync_hypothesis)
 
     c = sub.add_parser("check", help="check a repo against the protocol")
     c.add_argument("path", nargs="?", default=".")

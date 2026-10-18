@@ -19,7 +19,16 @@ not break any of them, so adoption is **additive first, moves later**.
    ```
 
 3. Add the kind line under the README's title: `**Kind:** study · **Stage:** SKETCH`.
-4. Add `RESEARCH.md` naming the corpus project and claim IDs.
+4. For a study, add `HYPOTHESIS.toml`: preserve the person's hypothesis verbatim, then use the relevant
+   specialist profiles and retrieval tool to propose falsifiable steps and integrations for the person's
+   decision. Mark established elements with verified corpus evidence; give every other element a goal and
+   what would count against it. Keep agent proposals marked `proposed` until the person accepts the exact
+   revision. Register existing units as `unmapped`. After elements are accepted, the managing agent reads each
+   unit's recorded scope and purpose and uses `scaffold link-hypothesis` to state its role and associations; it
+   never infers them from a folder name or replaces an existing narrower claim. Set the study's standing
+   `impact_management` policy, and run `scaffold sync-hypothesis` after relevant changes.
+   Add `RESEARCH.md` naming the corpus project and linking the evidence IDs. A sim adds `RESEARCH.md` naming
+   its corpus project and claim IDs.
 5. Install the preregistration kit (`kit_ap init`, then `kit_ap add experiment-pr-log`). If the repo already
    has a `CLAUDE.md`, the kit adds an `@AGENTS.md` import to it and leaves the rest alone.
 6. Add a `LICENSE` if there is none, once the licence is decided.

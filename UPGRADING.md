@@ -16,6 +16,35 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.11.0
+
+**`scaffold update` does:** moves the CI ref to `v0.11.0` and refreshes the managed study-agent rules with
+agent-managed hypothesis impact propagation. The generated specialist profiles are refreshed from
+scientific-research-agents v0.6.0.
+
+**A session does:** add `impact_management = "agent-managed"` and `impact_management_decided = "YYYY-MM-DD"`
+when the person has delegated routine propagation. After accepted elements exist, associate legacy units with
+`scaffold link-hypothesis <unit> --element <ID> --role "<relationship>"`; this records local provenance without
+replacing an existing claim. Run `scaffold sync-hypothesis` after hypothesis, evidence, finding or corpus changes.
+Update the corpus project overview as a reverse impact index, including pending affected repos that are not
+available locally.
+
+## v0.10.0
+
+**`scaffold update` does:** moves the CI ref to `v0.10.0` and refreshes the managed `AGENTS.md` section with
+the hypothesis-map, specialist-agent and corpus-overview workflow. It does not create or rewrite research
+records on the person's behalf.
+
+**A session does, with the person's go-ahead:** add `HYPOTHESIS.toml` to each existing study. Preserve the
+person's hypothesis verbatim. Use the relevant specialist profiles and the profile's retrieval tool to propose
+steps and integrations, then record only the decomposition and falsifiers the person accepts. Add every current
+element initially as `acceptance = "proposed"`; only the person changes it to accepted with its accepted revision
+and date. Add every current app version, sim, dataset analysis and calculator under `[[units]]` as
+`state = "unmapped"`; do not infer links.
+Resolve them with the person, snapshot element/evidence revisions, update `RESEARCH.md`, and create or reconcile
+the canonical project overview in the corpus. `scaffold check` warns about unresolved mappings at SKETCH and
+fails them from PROBE onward.
+
 ## v0.9.2
 
 **`scaffold update` does:** moves the CI ref to `v0.9.2`. `check` now finds apps laid out as
