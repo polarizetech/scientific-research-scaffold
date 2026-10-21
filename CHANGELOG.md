@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.11.1 (2026-10-21)
+
+- Pins scientific-research-agents v0.8.0, including the public installer for private researcher
+  extensions. Future scaffolded repositories receive the current public researcher brief; private
+  specialist briefs remain in a separate checkout and are installed only into selected repositories.
+- Generated CI checks out `v0.11.1`.
+
 ## v0.11.0 (2026-10-18)
 
 - **Agent-managed impact propagation.** A study records whether hypothesis impacts are `agent-managed` or
