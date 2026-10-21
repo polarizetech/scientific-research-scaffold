@@ -1190,6 +1190,7 @@ jobs:
         for kind in ("study", "sim", "tool"):
             scaffold.render(scaffold.TEMPLATES / kind, rendered / kind,
                             {**scaffold.template_vars({}, "x", "Does it?"), "job": "Does a job",
+                             "hypothesis_toml": scaffold.toml_str("Does it?"),
                              "visibility": "private", "visibility_decided": "2026-01-01"})
         for p in [*sorted((ROOT / "profiles").glob("*.toml")), ROOT / "tests" / "fixtures" / "multiline.toml",
                   *sorted(rendered.glob("*/*.toml"))]:

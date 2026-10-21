@@ -16,6 +16,16 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.11.1
+
+**`scaffold update` does:** moves the CI ref to `v0.11.1` and refreshes public agent briefs from
+scientific-research-agents v0.8.0. It does not copy private specialist briefs into a repository.
+
+**A session does:** if the repository needs a private specialist, use the public
+`agents/bin/install-agent-extensions` installer with a local private source and select the relevant
+profiles. Re-run it after updating the public researcher or private source brief. Keep the private
+checkout and its path out of public repository history.
+
 ## v0.11.0
 
 **`scaffold update` does:** moves the CI ref to `v0.11.0` and refreshes the managed study-agent rules with
