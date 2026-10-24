@@ -13,7 +13,7 @@ studies, simulators and tools in that shape and checks existing ones against it.
 | is | one research question, and everything used to pursue it | one simulator, under adaptive preregistration | one job done for other repos: an instrument, a recorder, a service, a library |
 | holds | apps, sims still in development, datasets and calculators, each preregistered where it predicts | the model, its preregistrations, its assumptions | the tool, and the list of repos that depend on it and what they use |
 | versions | `apps/<slug>/v1`, `apps/<slug>/v2` folders, and tags | `model-vX.Y.Z` tags, all in one repo | `vX.Y.Z` tags, one version said the same everywhere |
-| findings go to | the shared research corpus, referenced by claim ID | the same | none: a tool holds no research |
+| findings go to | the shared research corpus, referenced by claim ID | the same | none: a tool holds no research; its comparison units' results stay in them |
 
 A sim starts as a folder inside the study that needs it, and moves to its own repo when a second study
 uses it, it needs its own releases, or it is shared on its own. Repos are named for their subject, with no

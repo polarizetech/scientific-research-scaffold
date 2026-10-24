@@ -430,6 +430,44 @@ class Scaffold(unittest.TestCase):
                        "TOOL.toml has 'corpus'"):
             self.assertIn(needle, out)
 
+    def test_tool_may_hold_comparison_units(self):
+        """TOOL_VERSIONING.md §1a: sims and datasets that compare the tool with other tools."""
+        repo = self.tool()
+        code, out = run("new", "sim", "vs-other", "-q", "Compare the recorder with other", "--inside", str(repo),
+                        "--compares", "other 1.0.0", "--exploratory")
+        self.assertEqual(code, 0, out)
+        code, out = run("new", "dataset", "bench", "-q", "Compare on a public recording", "--study", str(repo),
+                        "--compares", "ref 2.1")
+        self.assertEqual(code, 0, out)
+        scope = scaffold.load_toml(repo / "sims" / "vs-other" / "SCOPE.toml")
+        self.assertEqual(scope["compares"], ["recorder 0.1.0", "other 1.0.0"])
+        self.assertEqual(scope["stage"], "exploratory")
+        self.assertEqual(scaffold.load_toml(repo / "datasets" / "bench" / "SCOPE.toml")["stage"], "testing")
+        m = scaffold.load_toml(repo / "TOOL.toml")
+        self.assertEqual([c["path"] for c in m["comparisons"]], ["sims/vs-other", "datasets/bench"])
+        self.assertTrue((repo / "EXPERIMENTS.md").exists())
+        self.assertFalse((repo / "sims" / "vs-other" / "RESEARCH.md").exists())
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+
+    def test_tool_comparison_units_are_checked(self):
+        repo = self.tool()
+        self.assertEqual(run("new", "sim", "vs-other", "-q", "Compare", "--inside", str(repo))[0], 1)  # no --compares
+        run("new", "sim", "vs-other", "-q", "Compare", "--inside", str(repo), "--compares", "other 1.0")
+        scope = repo / "sims" / "vs-other" / "SCOPE.toml"
+        scope.write_text(scope.read_text().replace(', "other 1.0"', ""))
+        (repo / "sims" / "stray" / "preregistrations").mkdir(parents=True)
+        (repo / "pkg" / "preregistrations").mkdir(parents=True)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        for needle in ("sims/vs-other/SCOPE.toml: compares must name the tool and at least one other tool",
+                       "sims/stray: a comparison unit needs a SCOPE.toml",
+                       "sims/stray is not listed under [[comparisons]]",
+                       "pkg/preregistrations: a tool's preregistrations go directly inside a comparison unit"):
+            self.assertIn(needle, out)
+        self.assertEqual(run("new", "sim", "x", "-q", "Q", "--dir", str(self.tmp), "--profile", "example",
+                             "--compares", "y 1", "--no-git")[0], 1)  # --compares outside a tool
+
     def test_tool_version_is_said_once(self):
         repo = self.tool()
         manifest = repo / "TOOL.toml"

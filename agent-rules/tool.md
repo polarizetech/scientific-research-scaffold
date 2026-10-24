@@ -2,8 +2,13 @@
 
 **Kind:** tool (`TOOL.toml`). {{job}}
 
-- **No research here.** No questions, preregistrations, results or findings, no `RESEARCH.md`,
-  `EXPERIMENTS.md`, `experiments/` or `preregistrations/`. A measurement made with this tool belongs to the study that made it.
+- **No research here, except comparisons with other tools.** No questions, findings or `RESEARCH.md`, and no
+  root `experiments/` or `preregistrations/`. A measurement made with this tool belongs to the study that made
+  it. The exception is comparison units: `sims/<slug>/` and `datasets/<slug>/` that compare this tool's
+  functionality against other tools, preregistering predictions based on inputs and checking whether the run is
+  correct, as an extension of the test suite (`.agents/protocols/TOOL_VERSIONING.md` §1a). Each names what it
+  `compares` in its `SCOPE.toml`, is listed under `[[comparisons]]` in `TOOL.toml`, keeps its preregistrations
+  and results inside it, and predicts tool outputs, never the world.
 - **Scope before science.** The claim, then the features, then an evidence basis and the person's recorded
   decision for every scientific feature, in `SCOPE.toml` (`.agents/protocols/SCOPE_PROTOCOL.md`). Infrastructure
   is yours to decide; nothing scientific is built before it is scoped. An override's experiment is
