@@ -1661,8 +1661,10 @@ def new_comparison(a, tool):
         render(TEMPLATES / "sim", dest, v, skip=(".github", "Makefile", "CITATION.cff", "pyproject.toml", ".gitignore",
                                                  "CLAUDE.md", "CHANGELOG.md", "EXPERIMENTS.md", "RESEARCH.md"))
         sim_manifest = dest / "SIM.toml"
-        kept = [ln for ln in sim_manifest.read_text(encoding="utf-8").splitlines() if not ln.startswith("visibility")]
-        sim_manifest.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        text = sim_manifest.read_text(encoding="utf-8").split("\n[corpus]")[0]  # its results stay in the tool
+        kept = [ln for ln in text.splitlines() if not ln.startswith("visibility")]
+        sim_manifest.write_text("\n".join(kept) + "\n# A comparison unit (TOOL_VERSIONING.md §1a): its results stay "
+                                "here, not in the research corpus.\n", encoding="utf-8")
     else:
         render(TEMPLATES / "units" / "dataset", dest, v)
     this = f"{m.get('name', tool.name)} {m.get('version', '')}".strip()

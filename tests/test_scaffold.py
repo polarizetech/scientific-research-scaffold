@@ -447,6 +447,7 @@ class Scaffold(unittest.TestCase):
         self.assertEqual([c["path"] for c in m["comparisons"]], ["sims/vs-other", "datasets/bench"])
         self.assertTrue((repo / "EXPERIMENTS.md").exists())
         self.assertFalse((repo / "sims" / "vs-other" / "RESEARCH.md").exists())
+        self.assertNotIn("corpus", scaffold.load_toml(repo / "sims" / "vs-other" / "SIM.toml"))
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
 
