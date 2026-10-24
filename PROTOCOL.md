@@ -32,7 +32,7 @@ library. Nothing in it resolves a path on one person's machine.
 |---|---|---|
 | **study** | one research question and everything used to pursue it | as tags and as `apps/<slug>/vN/` folders |
 | **sim** | one simulator, under adaptive preregistration | as `model-vX.Y.Z` tags inside one repo |
-| **tool** | one job done for other repos (an instrument, a recorder, a service, a library); no research | as `vX.Y.Z` tags inside one repo |
+| **tool** | one job done for other repos (an instrument, a recorder, a service, a library); no research, except comparisons with other tools | as `vX.Y.Z` tags inside one repo |
 | **workbench** | where work starts: general tools, sims and apps, and the studies that use them, in one repo | per unit; the workbench itself has no one stage |
 
 A profile fills five **roles** that studies and sims depend on but never contain. There is no default
@@ -224,7 +224,7 @@ strict they must be, so each has a folder, a register in `STUDY.toml`, and rules
 | **sim** | `sims/<slug>/`, or its own repo | running a model forward, often on an existing open-source simulator | the model's equations and every parameter with its source, the question, and a prediction |
 | **dataset** | `datasets/<slug>/` | testing the question against data that exists | a pinned reference to the data, selection criteria, and a preregistered analysis plan, before the outcome is opened |
 | **calculator** | `calculators/<slug>/` | the mathematics: equations, constants, ratios, scaling laws | the equation, its source or derivation, units, valid range and reference values |
-| **tool** | its own repo (§ 8) | reusable code with no research of its own | a job, and the repos that will use it |
+| **tool** | its own repo (§ 8) | reusable code with no research of its own, and its comparison units | a job, and the repos that will use it |
 
 ### The cycle
 
@@ -360,9 +360,18 @@ repo = "your-org/reef-acoustics"
 uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
 ```
 
-- **No research in a tool.** No question, no `[corpus]`, no `RESEARCH.md`, `EXPERIMENTS.md`,
-  `experiments/` or `preregistrations/`. A measurement made with a tool, even a measurement *of* the tool, is a finding of the
-  study that made it, recorded there against the tool release it used.
+- **No research in a tool, except comparisons with other tools.** No question, no `[corpus]`, no
+  `RESEARCH.md`, no root `experiments/` or `preregistrations/`. A measurement made with a tool, or of the tool
+  against the world, is a finding of the study that made it, recorded there against the tool release it used.
+- **Comparison units.** `sims/<slug>/` and `datasets/<slug>/` are allowed in a tool as long as they are about
+  comparing the tool's functionality against other tools: preregistering predictions based on inputs and
+  seeing whether the run is correct, as an extension of the test suite (the prereg kit's
+  `TOOL_VERSIONING.md` §1a). Each has a `SCOPE.toml` whose `compares` names the tool and at least one other
+  tool, keeps its `preregistrations/` and results inside it, and is listed under `[[comparisons]]` in
+  `TOOL.toml`; a root `EXPERIMENTS.md` lists their experiments. Its predictions are about the tools' outputs,
+  never about the world, and its extra dependencies stay out of the tool's runtime dependencies.
+  `scaffold new sim <name> -q "..." --inside <tool> --compares "<other> <version>"` (or `new dataset ... --study
+  <tool>`) creates one.
 - **One version, said the same everywhere.** `version` in `TOOL.toml`, `[project] version` in
   `pyproject.toml`, `version` in `CITATION.cff`, and a heading in `CHANGELOG.md`. Releases are tagged
   `vX.Y.Z`.
@@ -550,7 +559,8 @@ and saying plainly what was not done.
 | `experiments/` or `data/manifest.json` (the old layout), or an unregistered unit folder | warning | | | |
 | every external sim is pinned to a tag, not a branch | ✓ | | | |
 | every `[[tools]]` entry has a repo and is pinned to a tag, not a branch | ✓ | ✓ | | |
-| holds no research: no `question`, `[corpus]`, `RESEARCH.md`, `EXPERIMENTS.md`, `experiments/`, `preregistrations/` | | | | ✓ |
+| holds no research: no `question`, `[corpus]`, `RESEARCH.md`, root `experiments/` or `preregistrations/`, and a root `EXPERIMENTS.md` only with comparison units | | | | ✓ |
+| each comparison unit (`sims/<slug>/`, `datasets/<slug>/`) has a `SCOPE.toml` whose `compares` names the tool and another tool, is listed under `[[comparisons]]`, and holds the only `preregistrations/` | | | | ✓ |
 | `CHANGELOG.md` and `CITATION.cff` exist; one `X.Y.Z` version across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and a `CHANGELOG.md` heading | | | | ✓ |
 | every consumer has a `name`, a `repo` and a non-empty `uses` | | | | ✓ |
 | a unit whose `SCOPE.toml` says `stage = "exploratory"` says so in its README (or `CALCULATOR.md`), and has no preregistered experiments | ✓ | ✓ | ✓ | ✓ |

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Comparison units in a tool.** A tool repo may hold `sims/<slug>/` and `datasets/<slug>/` "as long as they
+  are about comparing the tool's functionality against other tools (aka preregistering predictions based on
+  inputs and seeing if the run is correct - essentially treating these like an extension on the test suite)"
+  (the person's wording, 2026-10-24; the prereg kit's `TOOL_VERSIONING.md` §1a). `scaffold new sim <name>
+  --inside <tool> --compares "<other> <version>"` and `scaffold new dataset <name> --study <tool> --compares ...`
+  create one: its `SCOPE.toml` says what it `compares`, it is registered under `[[comparisons]]` in `TOOL.toml`,
+  and the tool gets a root `EXPERIMENTS.md`. `scaffold check` on a tool now allows that `EXPERIMENTS.md` and
+  `preregistrations/` directly inside a comparison unit, and fails a comparison unit with no `compares`, one
+  missing from `[[comparisons]]`, or `preregistrations/` anywhere else. The agent rules and templates for tools
+  say the same.
+
 ## v0.11.1 (2026-10-21)
 
 - Pins scientific-research-agents v0.8.0, including the public installer for private researcher
