@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Report in three lists.** Every repo's `AGENTS.md` now tells assistants to report back in exactly three
+  short bullet lists: **Results** (what is true now, not what was done: it works, it broke, a new problem came
+  up), **Next (assistant)** (the work it will do next) and **Needed from you** (decisions or input the person
+  must give, or "Nothing"). The person's request, 2026-10-26. Existing repos get it with `scaffold update --apply`.
+
 - **Comparison units in a tool.** A tool repo may hold `sims/<slug>/` and `datasets/<slug>/` "as long as they
   are about comparing the tool's functionality against other tools (aka preregistering predictions based on
   inputs and seeing if the run is correct - essentially treating these like an extension on the test suite)"

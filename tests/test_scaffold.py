@@ -837,6 +837,17 @@ jobs:
         self.assertIn("gpt-5.6-sol", text)
         self.assertNotIn("{{", text)
 
+    def test_every_repo_tells_assistants_to_report_in_three_lists(self):
+        text = (self.study("report", profile="example") / "AGENTS.md").read_text()
+        self.assertIn("**Report in three lists.**", text)
+        for heading in ("**Results**", "**Next (assistant)**", "**Needed from you**"):
+            self.assertIn(heading, text)
+        self.assertLess(text.index("Report in three lists"), text.index("## Agents and coordination"))
+        code, out = run("new", "tool", "reporter", "-j", "Records a signal", "--dir", str(self.tmp),
+                        "--profile", "example", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 0, out)
+        self.assertIn("**Report in three lists.**", (self.tmp / "reporter" / "AGENTS.md").read_text())
+
     def test_research_questions_go_to_the_profiles_retrieval_tool(self):
         text = (self.study("roles", profile="polarizetech") / "AGENTS.md").read_text()
         self.assertIn("**Search with the retrieval tool first.**", text)
