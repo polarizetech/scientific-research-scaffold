@@ -372,6 +372,16 @@ uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
   never about the world, and its extra dependencies stay out of the tool's runtime dependencies.
   `scaffold new sim <name> -q "..." --inside <tool> --compares "<other> <version>"` (or `new dataset ... --study
   <tool>`) creates one.
+- **Benches.** `benches/<slug>/` runs like part of the test suite against reference implementations that live
+  in other repos (`TOOL_VERSIONING.md` §1b). A bench is a test, not an experiment: no claim, no
+  preregistrations. Its `SCOPE.toml` declares each reference under `[[references]]`: `repo`, `tag`, the tag's
+  full `commit`, `subdirectory`, `licence`, and `runs` (`python`, installed in the bench's own `pyproject.toml`
+  as `pkg @ git+URL@TAG#subdirectory=...` or a `[tool.uv.sources]` entry with `tag =`; or `process`, a separate
+  program such as GPL code under Octave, fetched at its commit and never imported). `tolerances.toml` holds the
+  owner's bounds, decided before scoring; `run.py` refuses to score before then, or against a reference at
+  another commit, and writes `results/<tool version>.json`. `make bench` runs every bench; it is run before
+  each release. `scaffold new bench <name> -q "..." --inside <tool> --reference
+  "NAME=OWNER/REPO@TAG[#SUBDIR],licence=L[,runs=process]"` creates one, resolving the tag's commit.
 - **One version, said the same everywhere.** `version` in `TOOL.toml`, `[project] version` in
   `pyproject.toml`, `version` in `CITATION.cff`, and a heading in `CHANGELOG.md`. Releases are tagged
   `vX.Y.Z`.
@@ -561,6 +571,7 @@ and saying plainly what was not done.
 | every `[[tools]]` entry has a repo and is pinned to a tag, not a branch | ✓ | ✓ | | |
 | holds no research: no `question`, `[corpus]`, `RESEARCH.md`, root `experiments/` or `preregistrations/`, and a root `EXPERIMENTS.md` only with comparison units | | | | ✓ |
 | each comparison unit (`sims/<slug>/`, `datasets/<slug>/`) has a `SCOPE.toml` whose `compares` names the tool and another tool, is listed under `[[comparisons]]`, and holds the only `preregistrations/` | | | | ✓ |
+| each bench (`benches/<slug>/`) declares `[[references]]` with a tag (not a branch) and full commit, pins each `runs = "python"` one at that tag, repo and subdirectory in its `pyproject.toml`, has `tolerances.toml`, decided before any result, and its latest result was scored against the current tolerances; it holds no `preregistrations/` | | | | ✓ |
 | `CHANGELOG.md` and `CITATION.cff` exist; one `X.Y.Z` version across `TOOL.toml`, `pyproject.toml`, `CITATION.cff` and a `CHANGELOG.md` heading | | | | ✓ |
 | every consumer has a `name`, a `repo` and a non-empty `uses` | | | | ✓ |
 | a unit whose `SCOPE.toml` says `stage = "exploratory"` says so in its README (or `CALCULATOR.md`), and has no preregistered experiments | ✓ | ✓ | ✓ | ✓ |

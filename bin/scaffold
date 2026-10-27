@@ -7,6 +7,7 @@
   scaffold new study <name> --question "..." --inside WORKBENCH
   scaffold new sim <name> --question "..." [--inside STUDY|WORKBENCH]
   scaffold new sim|dataset <name> -q "..." --inside|--study TOOL --compares "OTHER X.Y"   a comparison unit
+  scaffold new bench <name> -q "..." --inside TOOL --reference "NAME=OWNER/REPO@TAG[#SUBDIR],licence=L[,runs=process]"
   scaffold new tool <name> --job "..."
   scaffold new app <slug> --question "..." [--study PATH] [--hypothesis-element ID ...]
   scaffold new dataset <slug> --question "..." [--study PATH] [--hypothesis-element ID ...]
@@ -122,6 +123,13 @@ RESEARCH_FILES = ("RESEARCH.md", "EXPERIMENTS.md", "experiments", "preregistrati
 #: A tool repo's comparison units (the prereg kit's TOOL_VERSIONING.md §1a): sims and dataset analyses that
 #: compare the tool's functionality against other tools, as an extension of its test suite.
 TOOL_COMPARISONS = {"sim": "sims", "dataset": "datasets"}
+#: A tool repo's benches (TOOL_VERSIONING.md §1b): tests against reference implementations in other repos,
+#: pinned by tag, scored against tolerances the owner fixed first. A bench is a test, not an experiment.
+BENCHES = "benches"
+BENCH_RUNS = ("python", "process")
+FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+#: Licences a tool can't take on by importing the code: such a reference runs as a separate process.
+COPYLEFT_RE = re.compile(r"\b(A?GPL|GNU (Affero )?General Public)", re.I)
 UNDECIDED = "undecided"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 #: Kind prefixes the protocol retires (PROTOCOL.md § 1). The kind belongs in the manifest.
@@ -241,7 +249,11 @@ def _value(v, path, n):
         inner = v[1:v.rfind("]")].strip()
         return [_value(x.strip(), path, n) for x in _split_array(inner)] if inner else []
     try:
-        return float(v) if "." in v else int(v)
+        return int(v)
+    except ValueError:
+        pass
+    try:
+        return float(v)
     except ValueError:
         raise Fail(f"{path}:{n}: unsupported value {v!r}") from None
 
@@ -869,6 +881,16 @@ def cmd_sync_hypothesis(a):
 # ------------------------------------------------------------------------------------------ new
 
 def cmd_new(a):
+    if a.kind == "bench":
+        tool = Path(a.inside).resolve() if getattr(a, "inside", None) else None
+        if tool is None or not (tool / "TOOL.toml").exists():
+            raise Fail("a bench goes --inside a tool repo (TOOL_VERSIONING.md §1b)")
+        if not a.question:
+            raise Fail("a bench needs --question: what it checks the tool against")
+        check_name(a.name)
+        return new_bench(a, tool)
+    if getattr(a, "reference", None):
+        raise Fail("--reference is for a bench")
     if a.kind in TOOL_COMPARISONS:
         where = getattr(a, "inside", None) if a.kind == "sim" else a.study
         tool = Path(where).resolve() if where else None
@@ -1602,13 +1624,17 @@ def check_exploratory(root, rep):
 
 
 def comparison_units(root):
-    """A tool's comparison units: folders under sims/ or datasets/ with a SCOPE.toml or preregistrations/."""
+    """A tool's comparison units: folders under sims/ or datasets/ with a SCOPE.toml or preregistrations/,
+    and every folder under benches/."""
     units = []
     for folder in TOOL_COMPARISONS.values():
         base = Path(root) / folder
         if base.is_dir():
             units += [f"{folder}/{d.name}" for d in sorted(base.iterdir())
                       if d.is_dir() and ((d / "SCOPE.toml").exists() or (d / "preregistrations").is_dir())]
+    base = Path(root) / BENCHES
+    if base.is_dir():
+        units += [f"{BENCHES}/{d.name}" for d in sorted(base.iterdir()) if d.is_dir() and not d.name.startswith(".")]
     return units
 
 
@@ -1619,6 +1645,8 @@ def check_comparisons(root, m, units, rep):
     for unit in units:
         scope = root / unit / "SCOPE.toml"
         compares = []
+        if unit.startswith(BENCHES + "/"):
+            check_bench(root, unit, rep)
         if rep.ok(scope.exists(), f"{unit}: a comparison unit needs a SCOPE.toml naming what it compares"):
             try:
                 compares = load_toml(scope).get("compares", [])
@@ -1634,7 +1662,10 @@ def check_comparisons(root, m, units, rep):
         dirnames[:] = [d for d in dirnames if d not in skip]
         if "preregistrations" in dirnames:
             rel = Path(dirpath).relative_to(root).as_posix()
-            if rel != ".":
+            if rel.startswith(BENCHES + "/") and rel in units:
+                rep.ok(False, f"{rel}/preregistrations: a bench is a test, not an experiment; a comparison that is "
+                       "an experiment goes in sims/<slug>/ or datasets/<slug>/")
+            elif rel != ".":
                 rep.ok(rel in units, f"{rel}/preregistrations: a tool's preregistrations go directly inside a "
                        "comparison unit (sims/<slug>/ or datasets/<slug>/)")
             dirnames.remove("preregistrations")
@@ -1694,6 +1725,214 @@ def new_comparison(a, tool):
                           f"compares = [{', '.join(toml_str(c) for c in compares)}]")
     print(f"created {a.kind} {dest} (a comparison unit of {this})"
           + (" (exploratory: no claim yet)" if a.exploratory else "") + f"\n  registered in {manifest}")
+
+
+def git_url(repo):
+    """A reference's repo as a git URL: owner/name means GitHub, a local path becomes file://."""
+    if "://" in repo or repo.startswith("git@"):
+        return repo
+    if repo.startswith(("/", ".", "~")):
+        return Path(repo).expanduser().resolve().as_uri()
+    return f"https://github.com/{repo}"
+
+
+def same_repo(a, b):
+    """Whether two spellings of a repo (owner/name, https URL, .git suffix, git+ prefix) are the same."""
+    def norm(u):
+        u = git_url(u.strip())
+        u = re.sub(r"^git\+", "", u)
+        u = re.sub(r"^git@([^:]+):", r"https://\1/", u)
+        return re.sub(r"(\.git)?/*$", "", u).lower()
+    return norm(a) == norm(b)
+
+
+def parse_reference(spec):
+    """--reference "NAME=REPO@TAG[#SUBDIR][,licence=L][,runs=process][,package=P][,commit=SHA][,command=C]"."""
+    head, *opts = [s.strip() for s in spec.split(",")]
+    m = re.fullmatch(r"([a-z0-9][a-z0-9._-]*)=(.+)@([^@#]+)(?:#(.+))?", head)
+    if not m:
+        raise Fail(f"--reference {spec!r}: use NAME=OWNER/REPO@TAG[#SUBDIR],licence=LICENCE")
+    ref = {"name": m.group(1), "repo": m.group(2), "tag": m.group(3), "subdirectory": m.group(4) or ""}
+    for opt in opts:
+        k, sep, v = opt.partition("=")
+        if not sep or k not in ("licence", "runs", "package", "commit", "command"):
+            raise Fail(f"--reference {spec!r}: unknown option {opt!r} (licence, runs, package, commit, command)")
+        ref[k] = v
+    ref.setdefault("runs", "python")
+    if ref["runs"] not in BENCH_RUNS:
+        raise Fail(f"--reference {spec!r}: runs must be one of {BENCH_RUNS}")
+    if not ref.get("licence"):
+        raise Fail(f"--reference {spec!r}: say the reference's licence (licence=MIT, licence=GPL-3.0, ...): it "
+                   "decides whether the bench may import it")
+    if ref["runs"] == "python":
+        ref.setdefault("package", ref["name"])
+        if COPYLEFT_RE.search(ref["licence"]):
+            raise Fail(f"--reference {spec!r}: {ref['licence']} code runs as a separate process (runs=process), "
+                       "never imported into the tool's bench (TOOL_VERSIONING.md §1b)")
+    if ref["tag"] in BRANCH_REFS or not re.search(r"\d", ref["tag"]):
+        raise Fail(f"--reference {spec!r}: {ref['tag']!r} is not a release tag; pin a tag, never a branch")
+    if not ref.get("commit"):
+        ref["commit"] = tag_commit(ref["repo"], ref["tag"])
+    if not FULL_SHA_RE.match(ref["commit"]):
+        raise Fail(f"--reference {spec!r}: commit must be the tag's full 40-character commit")
+    return ref
+
+
+def tag_commit(repo, tag):
+    """The commit a tag points to, from the remote (peeled through an annotated tag)."""
+    code, out, err = git("ls-remote", "--tags", git_url(repo), f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}", cwd=".")
+    found = dict(reversed(line.split("\t", 1)) for line in out.splitlines() if "\t" in line)
+    sha = found.get(f"refs/tags/{tag}^{{}}") or found.get(f"refs/tags/{tag}")
+    if code or not sha:
+        raise Fail(f"could not find tag {tag} in {repo} ({err.strip() or 'no such tag'}); check it exists, or pass "
+                   "commit=<the tag's full commit> in --reference")
+    return sha
+
+
+def reference_pin(pyproject_text, package):
+    """How a bench's pyproject pins `package`: (url, ref kind, ref, subdirectory) or None. Reads a PEP 508
+    direct reference in dependencies ("pkg @ git+URL@REF#subdirectory=S") or a [tool.uv.sources] entry."""
+    name = re.sub(r"[-_.]", "[-_.]", re.escape(package).replace("\\", ""))
+    m = re.search(rf"""["']{name}(?:\[[^\]]*\])?\s*@\s*git\+([^"']+)["']""", pyproject_text, re.I)
+    if m:
+        url, _, frag = m.group(1).partition("#")
+        sub = dict(x.split("=", 1) for x in frag.split("&") if "=" in x).get("subdirectory", "")
+        scheme, sep, rest = url.partition("://")
+        host, slash, path = rest.partition("/")
+        path, at, ref = path.partition("@")
+        return scheme + sep + host + slash + path, ("tag" if at else "none"), ref, sub
+    sources = re.search(r"^\[tool\.uv\.sources\]\s*$(.*?)(?=^\[|\Z)", pyproject_text, re.M | re.S)
+    m = re.search(rf"^{name}\s*=\s*\{{(.*?)\}}", sources.group(1) if sources else "", re.M | re.I)
+    if not m:
+        return None
+    fields = dict(re.findall(r'(\w+)\s*=\s*"([^"]*)"', m.group(1)))
+    kind = next((k for k in ("tag", "branch", "rev") if k in fields), "none")
+    return fields.get("git", ""), kind, fields.get(kind, ""), fields.get("subdirectory", "")
+
+
+def check_bench(root, unit, rep):
+    """TOOL_VERSIONING.md §1b: every reference pinned by tag and commit, matched in the bench's own
+    environment; tolerances decided before any result, and every result scored against the current ones."""
+    bench = root / unit
+    try:
+        scope = load_toml(bench / "SCOPE.toml") if (bench / "SCOPE.toml").exists() else {}
+    except Exception as e:  # noqa: BLE001 - reported as a failure
+        rep.ok(False, f"{unit}/SCOPE.toml does not parse: {e}")
+        return
+    refs = scope.get("references", [])
+    rep.ok(scope.get("kind") == "bench", f"{unit}/SCOPE.toml: say kind = \"bench\"")
+    if not rep.ok(bool(refs), f"{unit}: a bench declares its references under [[references]] in SCOPE.toml"):
+        return
+    pyproject = bench / "pyproject.toml"
+    py_text = pyproject.read_text(encoding="utf-8") if pyproject.exists() else ""
+    for i, ref in enumerate(refs, 1):
+        label = f"{unit}: reference {ref.get('name') or i}"
+        for key in ("name", "repo", "tag", "commit", "licence", "runs"):
+            rep.ok(bool(ref.get(key)), f"{label} has no {key}")
+        tag = str(ref.get("tag", ""))
+        rep.ok(tag not in BRANCH_REFS and bool(re.search(r"\d", tag)),
+               f"{label}: {tag!r} is not a release tag; pin a tag, never a branch")
+        rep.ok(bool(FULL_SHA_RE.match(str(ref.get("commit", "")))),
+               f"{label}: commit must be the tag's full 40-character commit")
+        runs = ref.get("runs", "")
+        if not rep.ok(runs in BENCH_RUNS, f"{label}: runs must be one of {BENCH_RUNS}"):
+            continue
+        if runs == "process":
+            rep.ok(bool(ref.get("command")), f"{label}: say how the process is run (command = ...)", warn=True)
+            continue
+        rep.ok(not COPYLEFT_RE.search(str(ref.get("licence", ""))),
+               f"{label}: {ref.get('licence')} code is imported (runs = \"python\"); run it as a separate process "
+               "(runs = \"process\") unless the owner has decided the tool may take on that licence", warn=True)
+        package = str(ref.get("package") or ref.get("name", ""))
+        pin = reference_pin(py_text, package)
+        if not rep.ok(pin is not None, f"{label}: {package} is not pinned in {unit}/pyproject.toml "
+                      f"(\"{package} @ git+<url>@{tag}\")"):
+            continue
+        url, kind, at, sub = pin
+        if rep.ok(kind == "tag",
+                  f"{label}: pyproject.toml pins {package} to a {kind if kind != 'none' else 'default branch'}, "
+                  f"not a tag; pin {tag}"):
+            rep.ok(at == tag, f"{label}: pyproject.toml pins {package} at {at}, SCOPE.toml declares {tag}")
+        rep.ok(same_repo(url, str(ref.get("repo", ""))),
+               f"{label}: pyproject.toml fetches {package} from {url}, SCOPE.toml declares {ref.get('repo')}")
+        rep.ok(sub.strip("/") == str(ref.get("subdirectory", "")).strip("/"),
+               f"{label}: pyproject.toml's subdirectory {sub!r} differs from SCOPE.toml's "
+               f"{ref.get('subdirectory', '')!r}")
+
+    tolerances = bench / "tolerances.toml"
+    results = sorted((bench / "results").glob("*.json")) if (bench / "results").is_dir() else []
+    if not rep.ok(tolerances.exists(), f"{unit}: no tolerances.toml; the owner's bounds are fixed before scoring"):
+        return
+    if not results:
+        return
+    try:
+        tol = load_toml(tolerances)
+    except Exception as e:  # noqa: BLE001 - reported as a failure
+        rep.ok(False, f"{unit}/tolerances.toml does not parse: {e}")
+        return
+    rep.ok(bool(tol.get("decided_by")) and bool(tol.get("decided")) and bool(tol.get("metrics")),
+           f"{unit} has results, but tolerances.toml has no decided_by, decided or [[metrics]]: tolerances are "
+           "decided by the owner before scoring")
+    current = hashlib.sha256(tolerances.read_bytes()).hexdigest()
+    latest = max(results, key=lambda f: parse_version(f.stem) or (-1,))
+    try:
+        result = json.loads(latest.read_text(encoding="utf-8"))
+    except ValueError:
+        rep.ok(False, f"{unit}/results/{latest.name} is not JSON")
+        return
+    rep.ok(result.get("tolerances_sha256") == current,
+           f"{unit}/results/{latest.name} was scored against other tolerances than tolerances.toml now holds; "
+           "re-run the bench (a changed bound is a [[revisions]] entry the owner decided)")
+    ran = {r.get("name"): r.get("tag") for r in result.get("references", [])}
+    declared = {r.get("name"): r.get("tag") for r in refs}
+    rep.ok(ran == declared, f"{unit}/results/{latest.name} ran other references than SCOPE.toml pins now "
+           f"({ran} vs {declared}); re-run the bench", warn=True)
+
+
+def new_bench(a, tool):
+    """A bench inside a tool repo (TOOL_VERSIONING.md §1b), registered under [[comparisons]] in TOOL.toml."""
+    if not a.reference:
+        raise Fail("a bench needs --reference for each reference implementation, pinned by tag, e.g. "
+                   "--reference \"mso-goldwyn=polarizetech/audio-evoked-potentials@mso-goldwyn/v0.1.0"
+                   "#sims/mso-goldwyn,licence=MIT\"")
+    if a.compares:
+        raise Fail("a bench's --reference entries say what it compares; --compares is for a sim or dataset")
+    if a.hypothesis_element:
+        raise Fail("--hypothesis-element is for a study; a tool holds no hypothesis map")
+    refs = [parse_reference(s) for s in a.reference]
+    names = [r["name"] for r in refs]
+    if len(set(names)) != len(names):
+        raise Fail("each --reference needs its own NAME")
+    manifest = tool / "TOOL.toml"
+    m = load_toml(manifest)
+    dest = tool / BENCHES / a.name
+    if dest.exists():
+        raise Fail(f"{dest} already exists")
+    profile = load_profile(profile_name(a.profile, m))
+    deps = "".join(f"  {toml_str(r['package'] + ' @ git+' + git_url(r['repo']) + '@' + r['tag'] + ('#subdirectory=' + r['subdirectory'] if r['subdirectory'] else ''))},\n"
+                   for r in refs if r["runs"] == "python")
+    v = template_vars(profile, m.get("name", tool.name), a.question, slug=a.name, reference_deps=deps)
+    render(TEMPLATES / "units" / "bench", dest, v)
+    this = f"{m.get('name', tool.name)} {m.get('version', '')}".strip()
+    compares = [this] + [f"{r['name']} {r['tag']}" for r in refs]
+    lines = ["# Scope record of a bench (TOOL_VERSIONING.md §1b): a test of the tool against reference",
+             "# implementations in other repos, pinned by tag and commit. A bench has no claim and no",
+             "# preregistrations; a comparison that is an experiment goes in sims/ or datasets/.", "",
+             "format = 3", f"unit = {toml_str(a.name)}", 'kind = "bench"', f"question = {toml_str(a.question)}",
+             "compares = [" + ", ".join(toml_str(c) for c in compares) + "]"]
+    for r in refs:
+        lines += ["", "[[references]]"]
+        for key in ("name", "repo", "tag", "commit", "subdirectory", "licence", "runs", "package", "command"):
+            if key in r and (r[key] or key in ("subdirectory",)):
+                lines.append(f"{key} = {toml_str(r[key])}")
+        if r["runs"] == "process" and not r.get("command"):
+            lines.append('command = ""  # how the bench runs it as a separate process, e.g. "octave --no-gui ..."')
+    (dest / "SCOPE.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    append_toml(manifest, f"[[comparisons]]\nkind = \"bench\"\npath = {toml_str(f'{BENCHES}/{a.name}')}\n"
+                          f"compares = [{', '.join(toml_str(c) for c in compares)}]")
+    print(f"created bench {dest} ({this} against {', '.join(compares[1:])})\n  registered in {manifest}\n"
+          "  next: the owner decides tolerances.toml; then fill in cases(), outputs() and measure() in run.py, "
+          "and run `make bench`")
 
 
 def check_tool(root, m, rep):
@@ -2114,7 +2353,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("new", help="create a study, a sim, or an app inside a study")
-    n.add_argument("kind", choices=("study", "sim", "tool", "workbench", "app", *UNITS))
+    n.add_argument("kind", choices=("study", "sim", "tool", "workbench", "app", *UNITS, "bench"))
     n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
     n.add_argument("--question", "-q", help="the question it asks (or what a sim simulates; with --exploratory, "
                                             "what is being built)")
@@ -2130,10 +2369,14 @@ def main(argv=None):
                    help="record a visibility decision already made (default: left undecided; check fails until set)")
     n.add_argument("--dir", default=".", help="parent directory for a new repo")
     n.add_argument("--inside", help="create it inside this study or workbench: a study inside a workbench; "
-                                    "a sim or tool inside either; or a sim inside a tool, as a comparison unit")
+                                    "a sim or tool inside either; or a sim or bench inside a tool")
     n.add_argument("--compares", action="append", default=[], metavar="TOOL",
                    help="for a sim or dataset inside a tool: another tool it compares the tool with, with its "
                         "version (repeat for more)")
+    n.add_argument("--reference", action="append", default=[], metavar="SPEC",
+                   help="for a bench inside a tool: a reference implementation in another repo, pinned by tag: "
+                        "NAME=OWNER/REPO@TAG[#SUBDIR],licence=LICENCE[,runs=process][,package=P][,commit=SHA]"
+                        "[,command=C] (repeat for more)")
     n.add_argument("--study", default=".", help="for an app, dataset or calculator: the study to add it to "
                                                "(a dataset may also go in a tool, as a comparison unit)")
     n.add_argument("--kit-ap", help="path to kit_ap or a checkout of the prereg kit")

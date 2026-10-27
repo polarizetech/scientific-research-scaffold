@@ -7,7 +7,8 @@
 A tool in the sense of the [study protocol](https://github.com/polarizetech/scientific-research-scaffold/blob/main/PROTOCOL.md):
 it does a job for the studies and sims that use it, and holds no research of its own. A number produced
 with it is a finding of the repo that produced it, recorded there against the release it used. Comparisons of
-this tool with other tools, if any, are units under `sims/` and `datasets/`, an extension of its tests.
+this tool with other tools, if any, are units under `sims/` and `datasets/`, an extension of its tests;
+its benches (`benches/`, run with `make bench`) check it against reference implementations pinned by tag.
 
 | | |
 |---|---|

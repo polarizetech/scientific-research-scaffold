@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Benches in a tool.** `benches/<slug>/` (the prereg kit's `TOOL_VERSIONING.md` §1b) runs like part of the
+  test suite against reference simulators that live in another repo, pinned by tag. `scaffold new bench <name>
+  -q "..." --inside <tool> --reference "NAME=OWNER/REPO@TAG[#SUBDIR],licence=L[,runs=process]"` resolves the
+  tag's commit and renders the bench: `SCOPE.toml` with `[[references]]`, its own `pyproject.toml` pinning each
+  imported reference as `pkg @ git+URL@TAG#subdirectory=...`, an undecided `tolerances.toml`, `run.py` (refuses
+  to score before the owner's tolerances are decided and committed, or against a reference at another commit;
+  fetches `runs = "process"` references, such as GPL code, into an ignored cache and never imports them; writes
+  `results/<tool version>.json`) and a pytest wrapper. It is registered under `[[comparisons]]` with
+  `kind = "bench"`. `scaffold check` fails a reference pinned to a branch, without a full commit, missing from
+  the bench's `pyproject.toml` or pinned there at another tag, repo or subdirectory; a bench without
+  `tolerances.toml`, with results before tolerances were decided, or whose latest result was scored against
+  other tolerances; and `preregistrations/` in a bench. It warns on GPL code that is imported. The tool
+  `Makefile` gains `make bench`, and `make check` now runs `pytest tests` so benches' tests stay out of the
+  tool's own run. New tools get no `benches/` folder until the first bench. The minimal TOML reader (Python <
+  3.11) now reads floats written with an exponent.
+
 - **Comparison units in a tool.** A tool repo may hold `sims/<slug>/` and `datasets/<slug>/` "as long as they
   are about comparing the tool's functionality against other tools (aka preregistering predictions based on
   inputs and seeing if the run is correct - essentially treating these like an extension on the test suite)"

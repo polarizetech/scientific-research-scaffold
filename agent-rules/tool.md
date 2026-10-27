@@ -9,6 +9,12 @@
   correct, as an extension of the test suite (`.agents/protocols/TOOL_VERSIONING.md` §1a). Each names what it
   `compares` in its `SCOPE.toml`, is listed under `[[comparisons]]` in `TOOL.toml`, keeps its preregistrations
   and results inside it, and predicts tool outputs, never the world.
+- **Benches.** `benches/<slug>/` checks this tool against reference implementations in other repos, as part of
+  its tests (`.agents/protocols/TOOL_VERSIONING.md` §1b; `scaffold new bench`). Each reference is declared under
+  `[[references]]` in the bench's `SCOPE.toml` with a tag (never a branch) and the tag's commit, and pinned at
+  that tag in the bench's own `pyproject.toml`; GPL code runs as a separate process, never imported. The
+  person decides `tolerances.toml` before anything is scored: propose bounds, never set them. Run `make bench`
+  before every release and commit each `results/<version>.json`.
 - **Scope before science.** The claim, then the features, then an evidence basis and the person's recorded
   decision for every scientific feature, in `SCOPE.toml` (`.agents/protocols/SCOPE_PROTOCOL.md`). Infrastructure
   is yours to decide; nothing scientific is built before it is scoped. An override's experiment is
