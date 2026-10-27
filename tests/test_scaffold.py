@@ -471,7 +471,7 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(run("new", "sim", "x", "-q", "Q", "--dir", str(self.tmp), "--profile", "example",
                              "--compares", "y 1", "--no-git")[0], 1)  # --compares outside a tool
 
-    # ------------------------------------------------------------------------- benches (TOOL_VERSIONING.md §1b)
+    # ------------------------------------------------------------------------- bench sims (TOOL_VERSIONING.md §1b)
 
     def reference_repo(self, tag="ref/v1.0.0"):
         """A repo holding a reference implementation, with an annotated release tag."""
@@ -488,10 +488,10 @@ class Scaffold(unittest.TestCase):
 
     def bench(self, *refs):
         repo = self.tool()
-        code, out = run("new", "bench", "vs-ref", "-q", "Agree with the reference", "--inside", str(repo),
+        code, out = run("new", "sim", "vs-ref", "-q", "Agree with the reference", "--inside", str(repo),
                         *[x for r in refs for x in ("--reference", r)])
         self.assertEqual(code, 0, out)
-        return repo, repo / "benches" / "vs-ref"
+        return repo, repo / "sims" / "vs-ref"
 
     def test_new_bench_passes_check(self):
         ref, sha = self.reference_repo()
@@ -508,34 +508,36 @@ class Scaffold(unittest.TestCase):
         for f in ("run.py", "tolerances.toml", "tests/test_bench.py", ".gitignore", "README.md"):
             self.assertTrue((bench / f).exists(), f)
         self.assertNotIn("{{", (bench / "run.py").read_text())
-        self.assertFalse((repo / "EXPERIMENTS.md").exists())  # a bench is not an experiment
+        self.assertFalse((repo / "EXPERIMENTS.md").exists())  # a bench sim is not an experiment
+        self.assertFalse((bench / "preregistrations").exists())
         m = scaffold.load_toml(repo / "TOOL.toml")
-        self.assertEqual([(c["kind"], c["path"]) for c in m["comparisons"]], [("bench", "benches/vs-ref")])
-        self.assertIn("bench:", (repo / "Makefile").read_text())
+        self.assertEqual([(c["kind"], c["path"]) for c in m["comparisons"]], [("bench", "sims/vs-ref")])
+        self.assertIn("sims:", (repo / "Makefile").read_text())
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
 
     def test_new_bench_refuses_unpinned_or_unsafe_references(self):
         ref, sha = self.reference_repo()
         repo = self.tool()
-        for spec, needle in ((None, "needs --reference"),
+        for spec, needle in ((None, "needs --compares"),
                              (f"ref={ref}@ref/v1.0.0", "say the reference's licence"),
                              (f"ref={ref}@main,licence=MIT", "not a release tag"),
                              (f"ref={ref}@ref/v9.9.9,licence=MIT", "could not find tag ref/v9.9.9"),
                              (f"ref={ref}@ref/v1.0.0,licence=GPL-3.0", "runs as a separate process"),
                              (f"ref={ref}@ref/v1.0.0,licence=MIT,commit=abc", "full 40-character commit"),
                              (f"ref={ref}@ref/v1.0.0,licence=MIT,colour=red", "unknown option")):
-            code, out = run("new", "bench", "vs-ref", "-q", "Q", "--inside", str(repo),
+            code, out = run("new", "sim", "vs-ref", "-q", "Q", "--inside", str(repo),
                             *(["--reference", spec] if spec else []))
             self.assertEqual(code, 1, spec)
             self.assertIn(needle, out)
-        self.assertFalse((repo / "benches").exists())
-        code, out = run("new", "bench", "vs-ref", "-q", "Q", "--inside", str(repo), "--reference",
+        self.assertFalse((repo / "sims").exists())
+        code, out = run("new", "sim", "vs-ref", "-q", "Q", "--inside", str(repo), "--reference",
                         f"lgpl={ref}@ref/v1.0.0,licence=LGPL-2.1,commit={sha}")  # given commit: no lookup
         self.assertEqual(code, 0, out)
-        self.assertIn("goes --inside a tool", run("new", "bench", "b", "-q", "Q", "--inside", str(self.study()))[1])
-        self.assertIn("--reference is for a bench",
-                      run("new", "sim", "s", "-q", "Q", "--inside", str(repo), "--compares", "x 1",
+        self.assertIn("--reference is for a bench sim",
+                      run("new", "sim", "b", "-q", "Q", "--inside", str(self.study()), "--reference", "a=o/r@v1")[1])
+        self.assertIn("--compares is for a preregistered comparison unit",
+                      run("new", "sim", "sx", "-q", "Q", "--inside", str(repo), "--compares", "x 1",
                           "--reference", "a=o/r@v1,licence=MIT")[1])
 
     def test_bench_pins_are_checked(self):
@@ -570,7 +572,7 @@ class Scaffold(unittest.TestCase):
         self.assertIn("commit must be the tag's full 40-character commit", out)
         self.assertIn("GPL-3.0-only code is imported", out)
         (bench / "preregistrations").mkdir()
-        self.assertIn("a bench is a test, not an experiment", run("check", str(repo))[1])
+        self.assertIn("tolerances are its preregistration", run("check", str(repo))[1])
 
     def test_bench_tolerances_come_before_results(self):
         ref, _ = self.reference_repo()

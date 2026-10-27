@@ -1,9 +1,9 @@
-# The bench's own environment (TOOL_VERSIONING.md §1b): none of this is a runtime dependency of the tool.
+# The bench sim's own environment (TOOL_VERSIONING.md §1b): none of this is a runtime dependency of the tool.
 # Each reference with runs = "python" in SCOPE.toml is pinned here at the same tag; `scaffold check` matches them.
 [project]
-name = "{{name}}-bench-{{slug}}"
+name = "{{name}}-sim-{{slug}}"
 version = "0.0.0"
-description = "Bench {{slug}} of {{name}}: {{question}}"
+description = "Bench sim {{slug}} of {{name}}: {{question}}"
 requires-python = ">=3.11"
 dependencies = [
 {{reference_deps}}]

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Bench {{slug}} of {{name}}: the tool against its pinned references (TOOL_VERSIONING.md §1b).
+"""Bench sim {{slug}} of {{name}}: the tool against its pinned references (TOOL_VERSIONING.md §1b).
 
   uv run python run.py            check the pins and tolerances, score, write results/<tool version>.json
   uv run python run.py --verify   check the pins and tolerances only; score nothing
 
-Fill in cases(), outputs() and measure() below. The rest (pins, tolerances, results) is the bench's contract:
+Fill in cases(), outputs() and measure() below. The rest (pins, tolerances, results) is the sim's contract:
 it refuses to score against a reference at another commit than SCOPE.toml declares, or before the owner's
 tolerances are decided and committed.
 """
@@ -26,8 +26,8 @@ CACHE = HERE / ".references"  # runs = "process" references, fetched at their pi
 # ------------------------------------------------------------------------------------------- fill these in
 
 def cases():
-    """The bench's fixed inputs, as a dict of case name -> input. Declared here, never chosen after scoring."""
-    raise NotImplementedError("declare the bench's cases")
+    """The sim's fixed inputs, as a dict of case name -> input. Declared here, never chosen after scoring."""
+    raise NotImplementedError("declare the sim's cases")
 
 
 def outputs(who, case, ref=None):
@@ -116,7 +116,7 @@ def main(argv=None):
         raise SystemExit("SCOPE.toml declares no [[references]]")
     metrics, tol_hash = decided_tolerances(set(refs))
     if a.verify:
-        print(f"bench {{slug}}: {len(refs)} reference(s) at their pinned commits; tolerances decided")
+        print(f"sim {{slug}}: {len(refs)} reference(s) at their pinned commits; tolerances decided")
         return 0
 
     inputs = cases()
@@ -138,7 +138,7 @@ def main(argv=None):
     results_rel = (HERE / "results").relative_to(TOOL).as_posix()
     _, dirty = git("status", "--porcelain", "--", ".", f":(exclude){results_rel}")
     result = {
-        "bench": "{{slug}}",
+        "sim": "{{slug}}",
         "tool": {"name": "{{name}}", "version": version, "commit": commit, "uncommitted_changes": bool(dirty)},
         "references": [{"name": r["name"], "repo": r["repo"], "tag": r["tag"], "commit": r["commit"]}
                        for r in refs.values()],
@@ -154,7 +154,7 @@ def main(argv=None):
     for s in scored:
         bound = f"<= {s['at_most']}" if "at_most" in s else f">= {s['at_least']}"
         print(f"  {'pass' if s['passed'] else 'FAIL'}  {s['metric']} vs {s['reference']}: {s['value']:.6g} {bound}")
-    print(f"bench {{slug}} at {{name}} {version}: {'passed' if result['passed'] else 'FAILED'} -> {out.name}")
+    print(f"sim {{slug}} at {{name}} {version}: {'passed' if result['passed'] else 'FAILED'} -> {out.name}")
     return 0 if result["passed"] else 1
 
 

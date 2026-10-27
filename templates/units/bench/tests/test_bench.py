@@ -1,4 +1,4 @@
-"""Bench {{slug}} as a test (TOOL_VERSIONING.md §1b): `make bench` at the tool's root runs it."""
+"""Bench sim {{slug}} as a test (TOOL_VERSIONING.md §1b): `make sims` at the tool's root runs it."""
 import pathlib
 import sys
 

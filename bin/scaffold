@@ -7,7 +7,8 @@
   scaffold new study <name> --question "..." --inside WORKBENCH
   scaffold new sim <name> --question "..." [--inside STUDY|WORKBENCH]
   scaffold new sim|dataset <name> -q "..." --inside|--study TOOL --compares "OTHER X.Y"   a comparison unit
-  scaffold new bench <name> -q "..." --inside TOOL --reference "NAME=OWNER/REPO@TAG[#SUBDIR],licence=L[,runs=process]"
+  scaffold new sim <name> -q "..." --inside TOOL --reference "NAME=OWNER/REPO@TAG[#SUBDIR],licence=L[,runs=process]"
+                                                                                       a bench sim
   scaffold new tool <name> --job "..."
   scaffold new app <slug> --question "..." [--study PATH] [--hypothesis-element ID ...]
   scaffold new dataset <slug> --question "..." [--study PATH] [--hypothesis-element ID ...]
@@ -123,9 +124,10 @@ RESEARCH_FILES = ("RESEARCH.md", "EXPERIMENTS.md", "experiments", "preregistrati
 #: A tool repo's comparison units (the prereg kit's TOOL_VERSIONING.md §1a): sims and dataset analyses that
 #: compare the tool's functionality against other tools, as an extension of its test suite.
 TOOL_COMPARISONS = {"sim": "sims", "dataset": "datasets"}
-#: A tool repo's benches (TOOL_VERSIONING.md §1b): tests against reference implementations in other repos,
-#: pinned by tag, scored against tolerances the owner fixed first. A bench is a test, not an experiment.
-BENCHES = "benches"
+#: A tool repo's bench sims (TOOL_VERSIONING.md §1b): sims/<slug>/ whose SCOPE.toml says kind = "bench". They
+#: run against reference implementations in other repos, pinned by tag, and pass or fail against tolerances the
+#: owner fixed first; the tolerances are their preregistration, so they hold no preregistrations/ folder.
+BENCH_KIND = "bench"
 BENCH_RUNS = ("python", "process")
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 #: Licences a tool can't take on by importing the code: such a reference runs as a separate process.
@@ -881,16 +883,14 @@ def cmd_sync_hypothesis(a):
 # ------------------------------------------------------------------------------------------ new
 
 def cmd_new(a):
-    if a.kind == "bench":
-        tool = Path(a.inside).resolve() if getattr(a, "inside", None) else None
+    if getattr(a, "reference", None):
+        tool = Path(a.inside).resolve() if a.kind == "sim" and getattr(a, "inside", None) else None
         if tool is None or not (tool / "TOOL.toml").exists():
-            raise Fail("a bench goes --inside a tool repo (TOOL_VERSIONING.md §1b)")
+            raise Fail("--reference is for a bench sim: a sim --inside a tool repo (TOOL_VERSIONING.md §1b)")
         if not a.question:
-            raise Fail("a bench needs --question: what it checks the tool against")
+            raise Fail("a bench sim needs --question: what it checks the tool against")
         check_name(a.name)
         return new_bench(a, tool)
-    if getattr(a, "reference", None):
-        raise Fail("--reference is for a bench")
     if a.kind in TOOL_COMPARISONS:
         where = getattr(a, "inside", None) if a.kind == "sim" else a.study
         tool = Path(where).resolve() if where else None
@@ -1624,18 +1624,24 @@ def check_exploratory(root, rep):
 
 
 def comparison_units(root):
-    """A tool's comparison units: folders under sims/ or datasets/ with a SCOPE.toml or preregistrations/,
-    and every folder under benches/."""
+    """A tool's comparison units, bench sims among them: folders under sims/ or datasets/ with a SCOPE.toml or
+    preregistrations/."""
     units = []
     for folder in TOOL_COMPARISONS.values():
         base = Path(root) / folder
         if base.is_dir():
             units += [f"{folder}/{d.name}" for d in sorted(base.iterdir())
                       if d.is_dir() and ((d / "SCOPE.toml").exists() or (d / "preregistrations").is_dir())]
-    base = Path(root) / BENCHES
-    if base.is_dir():
-        units += [f"{BENCHES}/{d.name}" for d in sorted(base.iterdir()) if d.is_dir() and not d.name.startswith(".")]
     return units
+
+
+def is_bench(root, unit):
+    """Whether a comparison unit is a bench sim: its SCOPE.toml says kind = "bench" (TOOL_VERSIONING.md §1b)."""
+    scope = Path(root) / unit / "SCOPE.toml"
+    try:
+        return unit.startswith("sims/") and scope.exists() and load_toml(scope).get("kind") == BENCH_KIND
+    except Exception:  # noqa: BLE001 - an unparseable scope is reported by the comparison check
+        return False
 
 
 def check_comparisons(root, m, units, rep):
@@ -1645,7 +1651,7 @@ def check_comparisons(root, m, units, rep):
     for unit in units:
         scope = root / unit / "SCOPE.toml"
         compares = []
-        if unit.startswith(BENCHES + "/"):
+        if is_bench(root, unit):
             check_bench(root, unit, rep)
         if rep.ok(scope.exists(), f"{unit}: a comparison unit needs a SCOPE.toml naming what it compares"):
             try:
@@ -1662,9 +1668,9 @@ def check_comparisons(root, m, units, rep):
         dirnames[:] = [d for d in dirnames if d not in skip]
         if "preregistrations" in dirnames:
             rel = Path(dirpath).relative_to(root).as_posix()
-            if rel.startswith(BENCHES + "/") and rel in units:
-                rep.ok(False, f"{rel}/preregistrations: a bench is a test, not an experiment; a comparison that is "
-                       "an experiment goes in sims/<slug>/ or datasets/<slug>/")
+            if rel in units and is_bench(root, rel):
+                rep.ok(False, f"{rel}/preregistrations: a bench sim's tolerances are its preregistration; a "
+                       "comparison that is an experiment is a comparison unit without kind = \"bench\"")
             elif rel != ".":
                 rep.ok(rel in units, f"{rel}/preregistrations: a tool's preregistrations go directly inside a "
                        "comparison unit (sims/<slug>/ or datasets/<slug>/)")
@@ -1763,12 +1769,12 @@ def parse_reference(spec):
         raise Fail(f"--reference {spec!r}: runs must be one of {BENCH_RUNS}")
     if not ref.get("licence"):
         raise Fail(f"--reference {spec!r}: say the reference's licence (licence=MIT, licence=GPL-3.0, ...): it "
-                   "decides whether the bench may import it")
+                   "decides whether the bench sim may import it")
     if ref["runs"] == "python":
         ref.setdefault("package", ref["name"])
         if COPYLEFT_RE.search(ref["licence"]):
             raise Fail(f"--reference {spec!r}: {ref['licence']} code runs as a separate process (runs=process), "
-                       "never imported into the tool's bench (TOOL_VERSIONING.md §1b)")
+                       "never imported into the tool's bench sim (TOOL_VERSIONING.md §1b)")
     if ref["tag"] in BRANCH_REFS or not re.search(r"\d", ref["tag"]):
         raise Fail(f"--reference {spec!r}: {ref['tag']!r} is not a release tag; pin a tag, never a branch")
     if not ref.get("commit"):
@@ -1820,8 +1826,7 @@ def check_bench(root, unit, rep):
         rep.ok(False, f"{unit}/SCOPE.toml does not parse: {e}")
         return
     refs = scope.get("references", [])
-    rep.ok(scope.get("kind") == "bench", f"{unit}/SCOPE.toml: say kind = \"bench\"")
-    if not rep.ok(bool(refs), f"{unit}: a bench declares its references under [[references]] in SCOPE.toml"):
+    if not rep.ok(bool(refs), f"{unit}: a bench sim declares its references under [[references]] in SCOPE.toml"):
         return
     pyproject = bench / "pyproject.toml"
     py_text = pyproject.read_text(encoding="utf-8") if pyproject.exists() else ""
@@ -1890,13 +1895,14 @@ def check_bench(root, unit, rep):
 
 
 def new_bench(a, tool):
-    """A bench inside a tool repo (TOOL_VERSIONING.md §1b), registered under [[comparisons]] in TOOL.toml."""
+    """A bench sim inside a tool repo (TOOL_VERSIONING.md §1b), registered under [[comparisons]] in TOOL.toml."""
     if not a.reference:
-        raise Fail("a bench needs --reference for each reference implementation, pinned by tag, e.g. "
+        raise Fail("a bench sim needs --reference for each reference implementation, pinned by tag, e.g. "
                    "--reference \"mso-goldwyn=polarizetech/audio-evoked-potentials@mso-goldwyn/v0.1.0"
                    "#sims/mso-goldwyn,licence=MIT\"")
     if a.compares:
-        raise Fail("a bench's --reference entries say what it compares; --compares is for a sim or dataset")
+        raise Fail("a bench sim's --reference entries say what it compares; --compares is for a preregistered "
+                   "comparison unit")
     if a.hypothesis_element:
         raise Fail("--hypothesis-element is for a study; a tool holds no hypothesis map")
     refs = [parse_reference(s) for s in a.reference]
@@ -1905,7 +1911,7 @@ def new_bench(a, tool):
         raise Fail("each --reference needs its own NAME")
     manifest = tool / "TOOL.toml"
     m = load_toml(manifest)
-    dest = tool / BENCHES / a.name
+    dest = tool / TOOL_COMPARISONS["sim"] / a.name
     if dest.exists():
         raise Fail(f"{dest} already exists")
     profile = load_profile(profile_name(a.profile, m))
@@ -1915,9 +1921,9 @@ def new_bench(a, tool):
     render(TEMPLATES / "units" / "bench", dest, v)
     this = f"{m.get('name', tool.name)} {m.get('version', '')}".strip()
     compares = [this] + [f"{r['name']} {r['tag']}" for r in refs]
-    lines = ["# Scope record of a bench (TOOL_VERSIONING.md §1b): a test of the tool against reference",
-             "# implementations in other repos, pinned by tag and commit. A bench has no claim and no",
-             "# preregistrations; a comparison that is an experiment goes in sims/ or datasets/.", "",
+    lines = ["# Scope record of a bench sim (TOOL_VERSIONING.md §1b): it checks the tool against reference",
+             "# implementations in other repos, pinned by tag and commit. Its tolerances.toml is its",
+             "# preregistration: not meeting it is a failure of the tool, so it has no preregistrations/.", "",
              "format = 3", f"unit = {toml_str(a.name)}", 'kind = "bench"', f"question = {toml_str(a.question)}",
              "compares = [" + ", ".join(toml_str(c) for c in compares) + "]"]
     for r in refs:
@@ -1928,11 +1934,11 @@ def new_bench(a, tool):
         if r["runs"] == "process" and not r.get("command"):
             lines.append('command = ""  # how the bench runs it as a separate process, e.g. "octave --no-gui ..."')
     (dest / "SCOPE.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    append_toml(manifest, f"[[comparisons]]\nkind = \"bench\"\npath = {toml_str(f'{BENCHES}/{a.name}')}\n"
+    append_toml(manifest, f"[[comparisons]]\nkind = \"bench\"\npath = {toml_str(f'sims/{a.name}')}\n"
                           f"compares = [{', '.join(toml_str(c) for c in compares)}]")
-    print(f"created bench {dest} ({this} against {', '.join(compares[1:])})\n  registered in {manifest}\n"
+    print(f"created bench sim {dest} ({this} against {', '.join(compares[1:])})\n  registered in {manifest}\n"
           "  next: the owner decides tolerances.toml; then fill in cases(), outputs() and measure() in run.py, "
-          "and run `make bench`")
+          "and run `make sims` when tagging a new version")
 
 
 def check_tool(root, m, rep):
@@ -2353,7 +2359,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     n = sub.add_parser("new", help="create a study, a sim, or an app inside a study")
-    n.add_argument("kind", choices=("study", "sim", "tool", "workbench", "app", *UNITS, "bench"))
+    n.add_argument("kind", choices=("study", "sim", "tool", "workbench", "app", *UNITS))
     n.add_argument("name", help="the subject, no kind prefix (for an app: its slug)")
     n.add_argument("--question", "-q", help="the question it asks (or what a sim simulates; with --exploratory, "
                                             "what is being built)")
@@ -2369,12 +2375,12 @@ def main(argv=None):
                    help="record a visibility decision already made (default: left undecided; check fails until set)")
     n.add_argument("--dir", default=".", help="parent directory for a new repo")
     n.add_argument("--inside", help="create it inside this study or workbench: a study inside a workbench; "
-                                    "a sim or tool inside either; or a sim or bench inside a tool")
+                                    "a sim or tool inside either; or a sim inside a tool (a comparison unit or bench sim)")
     n.add_argument("--compares", action="append", default=[], metavar="TOOL",
                    help="for a sim or dataset inside a tool: another tool it compares the tool with, with its "
                         "version (repeat for more)")
     n.add_argument("--reference", action="append", default=[], metavar="SPEC",
-                   help="for a bench inside a tool: a reference implementation in another repo, pinned by tag: "
+                   help="for a bench sim inside a tool: a reference implementation in another repo, pinned by tag: "
                         "NAME=OWNER/REPO@TAG[#SUBDIR],licence=LICENCE[,runs=process][,package=P][,commit=SHA]"
                         "[,command=C] (repeat for more)")
     n.add_argument("--study", default=".", help="for an app, dataset or calculator: the study to add it to "
