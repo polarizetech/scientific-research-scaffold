@@ -15,6 +15,8 @@
   written into a repo. The hook never blocks a prompt and skips slash commands; without the gateway it adds
   the rule alone. `scaffold update` adds or refreshes the hook, and removes it if the profile stops naming
   a tool. Other assistants follow the rule in `AGENTS.md`, since only Claude Code runs the hook.
+  The `agents` submodule moves to scientific-research-agents v0.10.0, whose block template says the same
+  ("Retrieval first, for every question") in place of "Retrieval before search".
 
 - **Bench sims in a tool.** A sim in a tool's `sims/<slug>/` whose `SCOPE.toml` says `kind = "bench"` (the
   prereg kit's `TOOL_VERSIONING.md` §1b) runs like part of the test suite against reference simulators that
