@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Studies and tools start exploratory, from a goal and a rough approach.** The person's requirement
+  (2026-10-28): studies and tools are set up as exploratory by default and need no strict claim, only "a
+  general goal" and a "rough idea of how we might get there". That first conversation is "a back and forth
+  to decide if the goal is too big for the scope of one study or one tool, and whether it should be broken
+  up". `scaffold new study <name> --goal "..." --approach "..."` writes `HYPOTHESIS.toml` with `mode =
+  "exploratory"`, the goal and approach, and one exploratory element (no counts-against needed), and labels the
+  README. `scaffold new tool <name> --goal "..." --approach "..."` (or `--job`) writes an exploratory
+  `SCOPE.toml` with the same fields. Both record the sizing decision as `scope = "one"` or `"split: a, b"` with
+  `scope_decided`; `scaffold check` warns until it is there, and an exploratory study must stay at SKETCH.
+  The claim-first start remains on request: a study's `--hypothesis`, or `--claim`. The study and tool agent
+  rules, the new-study skill, the README and PROTOCOL.md describe the sizing conversation.
+
 - **Bench sims in a tool.** A sim in a tool's `sims/<slug>/` whose `SCOPE.toml` says `kind = "bench"` (the
   prereg kit's `TOOL_VERSIONING.md` §1b) runs like part of the test suite against reference simulators that
   live in another repo, pinned by tag. The person's decisions (2026-10-27): keep the name sims, since "a sim

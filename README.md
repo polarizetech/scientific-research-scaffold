@@ -35,8 +35,8 @@ cd ~/code
 export SCAFFOLD_PROFILE=example   # or your own; there is no built-in default (see below)
 
 scientific-research-scaffold/bin/scaffold new study reef-acoustics \
-  -q "Does the sound of a reef track its coral cover?" \
-  --hypothesis "A reef's soundscape predicts its ecological condition." --visibility private
+  --goal "Learn whether a reef's sound tracks its coral cover" \
+  --approach "Record healthy and degraded sites and compare their soundscapes" --visibility private
 cd reef-acoustics
 ../scientific-research-scaffold/bin/scaffold new app site-listener \
   -q "Can a degraded site be heard?" --hypothesis-element H1
@@ -51,7 +51,9 @@ the `gh repo create` line. It never publishes anything. Visibility is yours to d
 
 | command | does |
 |---|---|
-| `scaffold new study <name> -q "..." --hypothesis "..." [--visibility public\|private]` | a new study repo with its required hypothesis preserved verbatim |
+| `scaffold new study <name> --goal "..." --approach "..." [--visibility public\|private]` | a new study repo, exploratory: a goal and a rough approach, sized with the person before anything is built |
+| `scaffold new study <name> -q "..." --hypothesis "..."` | a new study repo that starts from the person's hypothesis, preserved verbatim |
+| `scaffold new tool <name> --goal "..." --approach "..." [--claim]` | a new tool repo, exploratory by default; `--claim` scopes it first instead |
 | `scaffold new sim <name> -q "..." [--inside STUDY] [--hypothesis-element H1]` | a new sim repo, or a sim folder linked into a study's hypothesis map |
 | `scaffold new tool <name> -j "..." [--inside STUDY\|WORKBENCH]` | a new tool repo, or a tool folder inside a study or workbench |
 | `scaffold new workbench <name> -q "..."` | a workbench: general tools, sims and apps, and studies as folders (`new study --inside`) |

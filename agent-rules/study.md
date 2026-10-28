@@ -2,7 +2,14 @@
 
 **Kind:** study. The layout and rules are the study protocol's; `STUDY.toml` is the register.
 
-- **The person's hypothesis is the source.** Preserve it verbatim in `HYPOTHESIS.toml`. Use the relevant
+- **Size the goal first.** A new study or tool starts exploratory, from the person's goal and a rough idea of
+  how to get there (`--goal`, `--approach`), not from a claim. Before building anything, talk it through with
+  the person, back and forth: is the goal one study's worth, or should it be broken up? Propose a split when
+  it is too big, in plain words, and let the person decide. Record the decision as `scope = "one"` or
+  `scope = "split: a, b"` with `scope_decided` (YYYY-MM-DD) in `HYPOTHESIS.toml`; `scaffold check` warns until it is there.
+  After a split, each piece starts the same way. A claim comes later, when the person wants one.
+- **When the person gives a hypothesis, it is the source.** Preserve it verbatim in `HYPOTHESIS.toml` and set
+  `mode = "hypothesis"`; an exploratory study stays at SKETCH until then. Use the relevant
   specialist briefs, with the `researcher` responsible for literature and evidence, to propose a decomposition
   into falsifiable steps and integrations. Never silently substitute an agent-authored hypothesis or
   counts-against criterion for the person's wording. Keep each element proposed until the person accepts that
