@@ -407,6 +407,15 @@ def retrieval_rule(profile):
             "own code or files doesn't need it.\n")
 
 
+# How an assistant reports back to the person, in every repo of every kind (the person's request, 2026-10-26).
+REPORTING_RULE = (
+    "- **Report in three lists.** When you report back on work, answer with exactly three short bullet lists, in "
+    "this order, and nothing else around them: **Results**, what is true now, not what was done (it works, it "
+    "broke, it didn't work, a new problem came up, something is unclear); **Next (assistant)**, the work you will "
+    "do next; **Needed from you**, any decision, approval or input you need from the person, or \"Nothing\". Plain "
+    "words, one line per bullet.\n")
+
+
 def agents_block(kind, variables, profile):
     """The scaffold's section of AGENTS.md: the roles and the coordination rules, for every assistant."""
     roster = "\n".join(f"| `{a}` | {ROLE_SUMMARIES[a]} | `.claude/agents/{a}.md` |" for a in AGENTS[kind])
@@ -416,7 +425,8 @@ def agents_block(kind, variables, profile):
     body = fill((AGENTS_DIR / "templates" / "AGENTS.block.md").read_text(encoding="utf-8"), {
         **variables,
         "repo_rules": fill((AGENT_RULES / f"{kind}.md").read_text(encoding="utf-8"), variables,
-                           f"agent-rules/{kind}.md").rstrip("\n") + "\n" + retrieval_rule(profile),
+                           f"agent-rules/{kind}.md").rstrip("\n") + "\n" + retrieval_rule(profile)
+                         + REPORTING_RULE,
         "agent_roster": "| role | takes | brief |\n|---|---|---|\n" + roster,
         "codex_routing": f"{models}. Use low reasoning effort for finding and summarising, medium by default, "
                          f"and a higher effort supported by the selected model when escalating.",
