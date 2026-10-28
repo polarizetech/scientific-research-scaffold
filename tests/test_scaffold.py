@@ -1012,18 +1012,64 @@ jobs:
         self.assertIn("gpt-5.6-sol", text)
         self.assertNotIn("{{", text)
 
-    def test_research_questions_go_to_the_profiles_retrieval_tool(self):
+    def test_every_question_goes_to_the_profiles_retrieval_tool(self):
         text = (self.study("roles", profile="polarizetech") / "AGENTS.md").read_text()
-        self.assertIn("**Search with the retrieval tool first.**", text)
+        self.assertIn("**Every question starts with the retrieval tool.**", text)
         self.assertIn("`research-rag`", text)
+        self.assertIn("A question about this repo's own code or files is no exception", text)
+        self.assertNotIn("doesn't need it", text)
         self.assertIn("The person can tell you not to use it", text)
-        self.assertLess(text.index("Search with the retrieval tool first"), text.index("## Agents and coordination"))
+        self.assertIn("**The retrieval tool picks the specialist.**", text)
+        self.assertIn("`pipeline__profile_route`", text)
+        self.assertLess(text.index("Every question starts with the retrieval tool"),
+                        text.index("## Agents and coordination"))
         code, out = run("new", "tool", "recorder", "-j", "Records a signal", "--dir", str(self.tmp),
                         "--profile", "polarizetech", "--visibility", "private", "--no-git")
         self.assertEqual(code, 0, out)  # every kind gets it, not only studies
-        self.assertIn("**Search with the retrieval tool first.**", (self.tmp / "recorder" / "AGENTS.md").read_text())
+        self.assertIn("**Every question starts with the retrieval tool.**",
+                      (self.tmp / "recorder" / "AGENTS.md").read_text())
         none = (self.study("plain", profile="example") / "AGENTS.md").read_text()  # a profile that names no tool
         self.assertNotIn("retrieval tool", none)
+
+    def test_a_retrieval_profile_gets_the_prompt_hook_and_others_do_not(self):
+        settings = scaffold.json.loads((self.study("hooked", profile="polarizetech") / ".claude" / "settings.json")
+                                       .read_text())
+        prompt = [h["command"] for g in settings["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
+        self.assertEqual(sum(scaffold.RAG_HOOK_MARK in c and "--server research-rag" in c for c in prompt), 1)
+        plain = scaffold.json.loads((self.study("unhooked", profile="example") / ".claude" / "settings.json")
+                                    .read_text())
+        self.assertNotIn("UserPromptSubmit", plain["hooks"])
+        kit = {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "prereg-status"}]}]}}
+        twice = scaffold.with_session_hook(scaffold.with_session_hook(scaffold.json.dumps(kit), "research-rag"),
+                                           "research-rag")
+        prompt = [h["command"] for g in scaffold.json.loads(twice)["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
+        self.assertIn("prereg-status", prompt)
+        self.assertEqual(sum(scaffold.RAG_HOOK_MARK in c for c in prompt), 1)
+        dropped = scaffold.json.loads(scaffold.with_session_hook(twice, ""))  # the profile stopped naming a tool
+        self.assertEqual([h["command"] for g in dropped["hooks"]["UserPromptSubmit"] for h in g["hooks"]],
+                         ["prereg-status"])
+
+    def test_the_prompt_hook_never_fails_and_says_what_it_knows(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("RESEARCH_RAG_")}
+        def hook(prompt, **extra):
+            out = subprocess.run([sys.executable, str(ROOT / "bin" / "scaffold"), "rag-hook", "--server", "research-rag"],
+                                 input=scaffold.json.dumps({"prompt": prompt}), capture_output=True, text=True,
+                                 env={**env, **extra}, timeout=30)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            return out.stdout
+        self.assertEqual(hook("/compact"), "")
+        text = scaffold.json.loads(hook("Why is pink noise pink?"))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("retrieve passages for this request with `research-rag`", text)
+        self.assertIn("are not set on this machine", text)
+        down = hook("Why?", RESEARCH_RAG_URL="http://127.0.0.1:9/", RESEARCH_RAG_TOKEN_FILE=str(self.tmp / "none"))
+        self.assertIn("did not answer", down)
+        route = {"specialist": "noise-engineering", "roles": ["researcher"], "guidance": "Name the domain.",
+                 "profiles": [{"name": "noise-engineering", "path": "agents/noise-engineering.md",
+                               "repository": "/x/agents"}]}
+        text = scaffold.rag_context("research-rag", route)
+        self.assertIn("to the `noise-engineering` specialist", text)
+        self.assertIn("Its guidance: Name the domain.", text)
+        self.assertIn("names no specialist", scaffold.rag_context("research-rag", {"specialist": "", "roles": []}))
 
     def test_each_kind_puts_its_shared_rules_in_agents_md(self):
         study, tool = self.study(), self.tool()

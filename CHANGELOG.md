@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Every question starts with the retrieval tool, and the tool picks the specialist.** The person's
+  requirement (2026-10-28): every question asked in these projects, by Claude, Codex or any other assistant,
+  runs the retrieval tool, and specialists are brought in only where the tool's pipeline routes them. When a
+  profile names a retrieval tool, the rule in `AGENTS.md` now covers every question, including questions
+  about the repo's own code (retrieve, then read the checkout), instead of only science questions. A second
+  rule has the assistant call `pipeline__profile_route` before bringing in a research role or specialist,
+  and use only what it returns. Claude Code also gets a `UserPromptSubmit` hook, `scaffold rag-hook
+  --server NAME`, installed beside the session hook. On every prompt it adds the rule to the context, and
+  when `$RESEARCH_RAG_URL` and `$RESEARCH_RAG_TOKEN_FILE` point at the tool's HTTP gateway on that machine,
+  it adds the route for the prompt (specialist, brief path and guidance). Nothing machine-specific is
+  written into a repo. The hook never blocks a prompt and skips slash commands; without the gateway it adds
+  the rule alone. `scaffold update` adds or refreshes the hook, and removes it if the profile stops naming
+  a tool. Other assistants follow the rule in `AGENTS.md`, since only Claude Code runs the hook.
+  The `agents` submodule moves to scientific-research-agents v0.10.0, whose block template says the same
+  ("Retrieval first, for every question") in place of "Retrieval before search".
+
 - **Bench sims in a tool.** A sim in a tool's `sims/<slug>/` whose `SCOPE.toml` says `kind = "bench"` (the
   prereg kit's `TOOL_VERSIONING.md` §1b) runs like part of the test suite against reference simulators that
   live in another repo, pinned by tag. The person's decisions (2026-10-27): keep the name sims, since "a sim

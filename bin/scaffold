@@ -22,6 +22,7 @@
   scaffold update [PATH] [--apply] [--adopt FILE]
   scaffold usage [PATH ...] [--days N] [--all]
   scaffold version [PATH] [--hook] [--offline]
+  scaffold rag-hook --server NAME     (a Claude Code prompt hook; reads the prompt on stdin)
   scaffold profiles
 
 Stdlib only (Python 3.9+). Needs git. `new` installs the preregistration kit when it can find kit_ap
@@ -36,6 +37,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -94,6 +96,17 @@ SETTINGS = Path(".claude") / "settings.json"
 HOOK_MARK = "version --hook"
 HOOK_CMD = ('S="${SCAFFOLD_BIN:-$(command -v scaffold || echo "$CLAUDE_PROJECT_DIR/../scientific-research-scaffold/bin/scaffold")}"; '
             '[ -f "$S" ] && python3 "$S" version --hook "$CLAUDE_PROJECT_DIR" || true')
+#: The prompt hook a repo gets when its profile names a retrieval tool: on every prompt, it reminds the
+#: assistant to retrieve first and, when the tool's HTTP gateway is configured on this machine
+#: ($RESEARCH_RAG_URL and $RESEARCH_RAG_TOKEN_FILE), adds the tool's own route for the prompt.
+RAG_HOOK_MARK = "rag-hook"
+
+
+def rag_hook_cmd(server):
+    return ('S="${SCAFFOLD_BIN:-$(command -v scaffold || echo "$CLAUDE_PROJECT_DIR/../scientific-research-scaffold/bin/scaffold")}"; '
+            f'[ -f "$S" ] && python3 "$S" rag-hook --server {shlex.quote(server)} || true')
+
+
 SESSION_NOTE = ("- **Scaffold version.** At the start of a session, run `scaffold version .` (or "
                 "`../scientific-research-scaffold/bin/scaffold version .`). If it reports a newer release, tell the "
                 "person and offer to upgrade, following the steps it prints (Claude Code runs this by itself).")
@@ -408,17 +421,28 @@ def render_agents(dest, kind, variables, profile):
 
 
 def retrieval_rule(profile):
-    """The rule that sends research questions to the profile's retrieval tool, or nothing if it names none."""
+    """The rules that send every question to the profile's retrieval tool and let that tool pick the
+    specialist (the person's requirement, 2026-10-28), or nothing if the profile names no tool."""
     tool = profile.get("retrieval", {})
     if not tool.get("server"):
         return ""
+    server = tool["server"]
     where = f" ([{tool['repo']}](https://github.com/{tool['repo']}))" if tool.get("repo") else ""
-    return (f"- **Search with the retrieval tool first.** A question about science, the literature or evidence is "
-            f"answered from `{tool['server']}`{where}, the MCP server of that name in the session: search with it "
-            "before answering, and ground what you say in the passages it returns, not in memory or a general web "
-            "search. If its tools aren't available in the session, say so before answering any other way. The "
-            "person can tell you not to use it, for one question or a whole session. A question about this repo's "
-            "own code or files doesn't need it.\n")
+    return (f"- **Every question starts with the retrieval tool.** Each question or task the person sends is "
+            f"answered with `{server}`{where}, the MCP server of that name in the session, whatever assistant "
+            "you are: retrieve passages for it first (`rag__retrieve_evidence`; for a literature question, its "
+            "pipeline, `pipeline__research_start`), and ground what you say in the passages it returns, not in "
+            "memory or a general web search. A question about this repo's own code or files is no exception: "
+            "retrieve, then read the checkout, which is the source of truth for its own files, and say when no "
+            "passage applies. A reply that only approves or answers something you asked continues the earlier "
+            "request. If its tools aren't available in the session, say so before answering any other way. The "
+            "person can tell you not to use it, for one question or a whole session.\n"
+            f"- **The retrieval tool picks the specialist.** Before bringing in a research role or specialist, "
+            f"call `pipeline__profile_route` on `{server}` with the question, and use only the research roles and "
+            "the specialist it returns, following its `guidance`. When it names no specialist, answer without one. "
+            "A specialist's brief is `.claude/agents/<name>.md` when it is installed here, and otherwise the file "
+            "at the path the route gives. Building roles (designer, developers, engineers) are still chosen by the "
+            "kind of task, and the person can always name a role themselves.\n")
 
 
 def agents_block(kind, variables, profile):
@@ -446,25 +470,42 @@ def with_block(text, block):
     return (text.rstrip("\n") + "\n\n" if text.strip() else "") + block
 
 
-def with_session_hook(text):
-    """.claude/settings.json text with the scaffold's session hook, replacing an older one of its own and
-    leaving every other hook (the prereg kit's among them) as it is."""
-    cur = json.loads(text) if text.strip() else {}
-    hooks = cur.setdefault("hooks", {})
+def _replace_hook(hooks, event, mark, entry):
+    """Drop the scaffold's own hook (by `mark`) from `event`, keep every other hook, then add `entry`."""
     groups = []
-    for group in hooks.get("SessionStart", []):
-        kept = [h for h in group.get("hooks", []) if HOOK_MARK not in h.get("command", "")]
+    for group in hooks.get(event, []):
+        kept = [h for h in group.get("hooks", []) if mark not in h.get("command", "")]
         if kept:
             groups.append({**group, "hooks": kept})
-    groups.append({"hooks": [{"type": "command", "command": HOOK_CMD, "timeout": 10}]})
-    hooks["SessionStart"] = groups
+    if entry:
+        groups.append({"hooks": [entry]})
+    if groups:
+        hooks[event] = groups
+    else:
+        hooks.pop(event, None)
+
+
+def with_session_hook(text, server=""):
+    """.claude/settings.json text with the scaffold's hooks: the session hook, and the prompt hook when the
+    profile names a retrieval `server`. Older copies of its own are replaced; every other hook (the prereg
+    kit's among them) stays as it is."""
+    cur = json.loads(text) if text.strip() else {}
+    hooks = cur.setdefault("hooks", {})
+    _replace_hook(hooks, "SessionStart", HOOK_MARK, {"type": "command", "command": HOOK_CMD, "timeout": 10})
+    _replace_hook(hooks, "UserPromptSubmit", RAG_HOOK_MARK,
+                  {"type": "command", "command": rag_hook_cmd(server), "timeout": 10} if server else None)
     return json.dumps(cur, indent=2) + "\n"
 
 
-def write_session_hook(dest):
+def retrieval_server(profile):
+    return profile.get("retrieval", {}).get("server", "")
+
+
+def write_session_hook(dest, profile=None):
     path = dest / SETTINGS
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(with_session_hook(path.read_text(encoding="utf-8") if path.exists() else ""), encoding="utf-8")
+    path.write_text(with_session_hook(path.read_text(encoding="utf-8") if path.exists() else "",
+                                      retrieval_server(profile or {})), encoding="utf-8")
 
 
 def write_agents_block(dest, kind, variables, profile):
@@ -977,7 +1018,7 @@ def cmd_new(a):
     write_lock(dest, a.kind, profile)
     if a.no_git:
         write_agents_block(dest, a.kind, v, profile)
-        write_session_hook(dest)
+        write_session_hook(dest, profile)
         return
     git("init", "-q", "-b", "main", cwd=dest)
     git("add", "-A", cwd=dest)
@@ -989,7 +1030,7 @@ def cmd_new(a):
     tool_modules = profile.get("prereg", {}).get("tool_modules", [])
     install_kit(dest, profile, find_kit_ap(a.kit_ap, profile), extra=tool_modules if a.kind == "tool" else None)
     write_agents_block(dest, a.kind, v, profile)
-    write_session_hook(dest)
+    write_session_hook(dest, profile)
     git("add", "AGENTS.md", str(SETTINGS), cwd=dest)
     git("commit", "-q", "-m", "Add the agents section and the scaffold session hook (scientific-research-scaffold)", cwd=dest)
     org = profile.get("org", "<org>")
@@ -2175,7 +2216,7 @@ def plan_update(root, adopt=()):
     settings = root / SETTINGS
     cur = settings.read_text(encoding="utf-8") if settings.exists() else ""
     try:
-        new = with_session_hook(cur)
+        new = with_session_hook(cur, retrieval_server(profile))
     except ValueError:
         plan.append((str(SETTINGS), "edited", cur, cur, "not valid JSON; kept"))
         return kind, profile, plan
@@ -2325,6 +2366,72 @@ def latest_release(timeout=4):
     return max((t for t in tags if t), default=None)
 
 
+def rag_context(server, route=None, problem=""):
+    """What the prompt hook adds to the assistant's context: the retrieval rule, and the route if known."""
+    lines = [f"Before answering, retrieve passages for this request with `{server}` (`rag__retrieve_evidence`, "
+             "or its pipeline for a literature question) and ground the answer in them; if its tools are not in "
+             "this session, say so first (AGENTS.md: every question starts with the retrieval tool)."]
+    if route and route.get("available") is not False:
+        spec = route.get("specialist") or ""
+        roles = ", ".join(route.get("roles") or []) or "none"
+        if spec:
+            path = next((p.get("path", "") for p in route.get("profiles", []) if p.get("name") == spec), "")
+            repo = next((p.get("repository", "") for p in route.get("profiles", []) if p.get("name") == spec), "")
+            where = f"`.claude/agents/{spec}.md` if installed here, else `{path}` in `{repo}`" if path else \
+                f"`.claude/agents/{spec}.md`"
+            lines.append(f"`{server}` routes this request to the `{spec}` specialist (brief: {where}), with research "
+                         f"roles: {roles}. Use that brief and only those roles.")
+            if route.get("guidance"):
+                lines.append(f"Its guidance: {route['guidance']}")
+        else:
+            lines.append(f"`{server}` names no specialist for this request (research roles: {roles}): do not bring "
+                         "one in unless the person asks.")
+    elif problem:
+        lines.append(f"The route for this request is unknown ({problem}); call `pipeline__profile_route` before "
+                     "bringing in a research role or specialist.")
+    return "\n".join(lines)
+
+
+def fetch_route(prompt, url, token, timeout=3.0):
+    """Ask the retrieval tool's HTTP gateway for the deterministic route of `prompt` (no model runs)."""
+    import urllib.request
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                       "params": {"name": "pipeline__profile_route", "arguments": {"question": prompt[:4000]}}})
+    req = urllib.request.Request(url, data=body.encode(), method="POST", headers={
+        "Authorization": f"Bearer {token}", "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - a configured local gateway
+        reply = json.loads(resp.read().decode())
+    result = reply.get("result") or {}
+    if result.get("isError") or not result.get("content"):
+        raise ValueError((reply.get("error") or {}).get("message") or "the gateway returned no route")
+    route = json.loads(result["content"][0]["text"])
+    return json.loads(route["result"]) if isinstance(route.get("result"), str) else route
+
+
+def cmd_rag_hook(a):
+    """A Claude Code UserPromptSubmit hook. It never blocks a prompt and never fails the session."""
+    try:
+        prompt = str(json.loads(sys.stdin.read() or "{}").get("prompt", "")).strip()
+    except Exception:  # noqa: BLE001 - a hook must never fail the session
+        prompt = ""
+    if not prompt or prompt.startswith("/"):
+        return 0
+    url, token_file = os.environ.get("RESEARCH_RAG_URL", ""), os.environ.get("RESEARCH_RAG_TOKEN_FILE", "")
+    route, problem = None, ""
+    if url and token_file:
+        try:
+            token = Path(token_file).expanduser().read_text(encoding="utf-8").strip()
+            route = fetch_route(prompt, url, token)
+        except Exception as exc:  # noqa: BLE001 - report the reason, never the token
+            problem = f"gateway at {url} did not answer: {type(exc).__name__}"
+    else:
+        problem = "RESEARCH_RAG_URL and RESEARCH_RAG_TOKEN_FILE are not set on this machine"
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                             "additionalContext": rag_context(a.server, route, problem)}}))
+    return 0
+
+
 def cmd_version(a):
     root = Path(a.path).resolve()
     try:
@@ -2439,6 +2546,10 @@ def main(argv=None):
     ve.add_argument("--hook", action="store_true", help="for a session hook: quiet when up to date, never fails")
     ve.add_argument("--offline", action="store_true", help="don't check GitHub for a newer release")
     ve.set_defaults(fn=cmd_version)
+
+    rh = sub.add_parser("rag-hook", help="Claude Code prompt hook: the retrieval rule and the tool's route")
+    rh.add_argument("--server", required=True, help="the retrieval MCP server's name, from the profile")
+    rh.set_defaults(fn=cmd_rag_hook)
 
     sub.add_parser("profiles", help="list profiles").set_defaults(fn=cmd_profiles)
 
