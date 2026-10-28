@@ -1917,8 +1917,14 @@ def new_bench(a, tool):
     profile = load_profile(profile_name(a.profile, m))
     deps = "".join(f"  {toml_str(r['package'] + ' @ git+' + git_url(r['repo']) + '@' + r['tag'] + ('#subdirectory=' + r['subdirectory'] if r['subdirectory'] else ''))},\n"
                    for r in refs if r["runs"] == "python")
-    v = template_vars(profile, m.get("name", tool.name), a.question, slug=a.name, reference_deps=deps)
+    v = template_vars(profile, m.get("name", tool.name), a.question, slug=a.name)
     render(TEMPLATES / "units" / "bench", dest, v)
+    if deps:  # the template stays valid TOML (dependency scanners read it), so the pins go in after rendering
+        pyproject = dest / "pyproject.toml"
+        text = pyproject.read_text(encoding="utf-8")
+        at = text.index("dependencies = []")
+        end = text.index("\n", at)
+        pyproject.write_text(text[:at] + "dependencies = [\n" + deps + "]" + text[end:], encoding="utf-8")
     this = f"{m.get('name', tool.name)} {m.get('version', '')}".strip()
     compares = [this] + [f"{r['name']} {r['tag']}" for r in refs]
     lines = ["# Scope record of a bench sim (TOOL_VERSIONING.md §1b): it checks the tool against reference",

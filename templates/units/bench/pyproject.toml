@@ -5,8 +5,7 @@ name = "{{name}}-sim-{{slug}}"
 version = "0.0.0"
 description = "Bench sim {{slug}} of {{name}}: {{question}}"
 requires-python = ">=3.11"
-dependencies = [
-{{reference_deps}}]
+dependencies = []  # `scaffold new` fills in each runs = "python" reference, pinned at its tag
 
 [dependency-groups]
 dev = ["pytest>=8"]
