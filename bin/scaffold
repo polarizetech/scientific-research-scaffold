@@ -2,14 +2,15 @@
 # SPDX-License-Identifier: MIT
 """scaffold: create studies, sims and apps in the shape PROTOCOL.md describes, and check existing repos.
 
-  scaffold new study <name> --question "..." --hypothesis "..." [--profile NAME] [--visibility public|private] [--dir PARENT]
+  scaffold new study <name> --goal "..." --approach "..." [--profile NAME] [--visibility public|private] [--dir PARENT]
+  scaffold new study <name> --question "..." --hypothesis "..."    a study that starts from a claim instead
   scaffold new workbench <name> --question "the theme"
   scaffold new study <name> --question "..." --inside WORKBENCH
   scaffold new sim <name> --question "..." [--inside STUDY|WORKBENCH]
   scaffold new sim|dataset <name> -q "..." --inside|--study TOOL --compares "OTHER X.Y"   a comparison unit
   scaffold new sim <name> -q "..." --inside TOOL --reference "NAME=OWNER/REPO@TAG[#SUBDIR],licence=L[,runs=process]"
                                                                                        a bench sim
-  scaffold new tool <name> --job "..."
+  scaffold new tool <name> --job "..." --approach "..."   (exploratory, the default; --claim to scope first)
   scaffold new app <slug> --question "..." [--study PATH] [--hypothesis-element ID ...]
   scaffold new dataset <slug> --question "..." [--study PATH] [--hypothesis-element ID ...]
   scaffold new calculator <slug> --question "what it computes" [--study PATH] [--hypothesis-element ID ...]
@@ -616,14 +617,22 @@ EXPLORATORY_LABEL = ("**Scope:** exploratory. No claim yet, and nothing here is 
 EXPLORATORY_DOCS = ("README.md", "CALCULATOR.md")
 
 
-def write_exploratory(dest, unit, building):
+SCOPE_NOTE = ("# scope: the first conversation's decision, \"one\" (it fits one {kind}) or \"split: a, b\" (break it\n"
+              "# up), with scope_decided = YYYY-MM-DD. Decide it with the person before building.\n")
+
+
+def write_exploratory(dest, unit, building, approach=None, kind=""):
     """Mark a unit the person called exploratory: the scope record the preregistration kit reads (its
-    SCOPE_PROTOCOL.md, format 3) with the build note in place of a claim, and the label where it is read."""
+    SCOPE_PROTOCOL.md, format 3) with the build note in place of a claim, and the label where it is read.
+    A tool started exploratory (the default) also records its rough approach and the scope decision."""
+    sizing = "" if approach is None else (
+        f"approach = {toml_str(approach)}\n" + SCOPE_NOTE.format(kind=kind or "unit")
+        + "scope = \"\"\nscope_decided = \"\"\n")
     (dest / "SCOPE.toml").write_text(
         "# Scope record (.agents/protocols/SCOPE_PROTOCOL.md). Exploratory: no claim yet, and features need no\n"
         "# evidence basis or decision. Settle the claim, and set stage = \"testing\", before the first experiment.\n\n"
         f"format = 3\nunit = {toml_str(unit)}\nstage = \"exploratory\"\n\n"
-        f"[exploration]\nbuilding = {toml_str(building)}\nknown = \"\"\n"
+        f"[exploration]\nbuilding = {toml_str(building)}\n{sizing}known = \"\"\n"
         f"started = \"{_dt.date.today().isoformat()}\"\n\n"
         "[claim]\ntext = \"\"\ncounts_against = \"\"\ndecided = \"\"\nexperiments = []\n", encoding="utf-8")
     doc = next((dest / n for n in EXPLORATORY_DOCS if (dest / n).exists()), None)
@@ -634,6 +643,35 @@ def write_exploratory(dest, unit, building):
     at = next((i + 1 for i, ln in enumerate(lines) if ln.startswith("# ")), 0)
     lines[at:at] = ["", EXPLORATORY_LABEL]
     doc.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+EXPLORATORY_STUDY_LABEL = ("**Scope:** exploratory. This study starts from a goal and a rough approach, not a claim, "
+                           "and nothing here is a finding yet. It gets its hypothesis before it leaves SKETCH.")
+
+
+def write_exploratory_study(dest, goal, approach):
+    """A study started from a goal and a rough approach (the default): HYPOTHESIS.toml in exploratory mode,
+    with one exploratory element holding the goal, and the label in the README."""
+    today = _dt.date.today().isoformat()
+    (dest / "HYPOTHESIS.toml").write_text(
+        "# Study hypothesis map (PROTOCOL.md, \"Study hypothesis map\"). This study is exploratory: it starts from a\n"
+        "# goal and a rough approach, not a claim. When the person has a hypothesis, put it in `hypothesis` in their\n"
+        "# words, set mode = \"hypothesis\", and decompose it into falsifiable elements; until then it stays at SKETCH.\n"
+        f"format = 1\nmode = \"exploratory\"\nhypothesis = \"\"\ngoal = {toml_str(goal)}\n"
+        f"approach = {toml_str(approach)}\n" + SCOPE_NOTE.format(kind="study")
+        + "scope = \"\"\nscope_decided = \"\"\n"
+        "corpus_revision = \"unverified\" # corpus commit/tag used for the latest evidence sweep\n"
+        "impact_management = \"agent-managed\" # agents propagate impacts and queue affected units\n"
+        f"impact_management_decided = \"{today}\"\n\n"
+        "[[elements]]\nid = \"G1\"\nkind = \"step\"\nrevision = 1\nacceptance = \"proposed\"\naccepted_revision = 0\n"
+        f"accepted = \"\"\nstatement = {toml_str(goal)}\nstatus = \"exploratory\"\nbasis = \"exploratory\"\n"
+        "depends_on = []\nevidence = []\nevidence_revision = \"unverified\"\nderivation = \"\"\n"
+        f"goal = {toml_str(goal)}\ncounts_against = \"\"  # not needed while exploratory\n", encoding="utf-8")
+    readme = dest / "README.md"
+    lines = readme.read_text(encoding="utf-8").splitlines() if readme.exists() else [f"# {dest.name}"]
+    at = next((i + 1 for i, ln in enumerate(lines) if ln.startswith("# ")), 0)
+    lines[at:at] = ["", EXPLORATORY_STUDY_LABEL, "", f"**Goal:** {goal}", "", f"**Rough approach:** {approach}"]
+    readme.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def append_toml(path, block):
@@ -947,9 +985,20 @@ def cmd_new(a):
             raise Fail(f"a {a.kind} needs --question")
         return new_app(a) if a.kind == "app" else new_unit(a)
     check_name(a.name)
-    if a.exploratory and a.kind in CONTAINERS:
-        raise Fail(f"a {a.kind} starts with its question; --exploratory is for a unit (an app, sim, tool, dataset "
-                   "or calculator)")
+    if a.exploratory and a.kind == "workbench":
+        raise Fail("a workbench starts with its question; --exploratory is for a study or a unit (an app, sim, "
+                   "tool, dataset or calculator)")
+    # A study or tool starts exploratory, from a goal and a rough approach (the person's decision,
+    # 2026-10-28); --hypothesis (a study) or --claim starts it from a claim instead.
+    claim = bool(a.claim or a.hypothesis)
+    # For a tool, --exploratory alone keeps its older meaning: a build note, no approach asked for.
+    explore = (a.kind == "study" and not claim) or (a.kind == "tool" and not claim and not a.exploratory)
+    if a.claim and a.exploratory:
+        raise Fail("--claim and --exploratory contradict each other")
+    if a.goal and a.kind not in ("study", "tool"):
+        raise Fail("--goal is for a study or a tool")
+    if a.kind == "tool" and a.goal and not a.job:
+        a.job = a.goal
     inside = Path(a.inside).resolve() if getattr(a, "inside", None) else None
     host = container(inside) if inside else None  # (kind, manifest path) of what --inside points at
     if inside:
@@ -957,13 +1006,26 @@ def cmd_new(a):
             raise Fail("a workbench is always its own repo")
         if a.kind == "study" and host[0] != "workbench":
             raise Fail("a study goes --inside a workbench, or is its own repo")
+    if explore:
+        goal = a.goal or (a.job if a.kind == "tool" else "")
+        if not goal:
+            raise Fail(f"a {a.kind} starts from a goal: pass --goal \"...\" (what it should achieve) and --approach "
+                       "\"...\" (a rough idea of how), or --claim to start from a claim instead")
+        if not (a.approach or "").strip():
+            raise Fail(f"a {a.kind} starts from a goal and a rough approach: pass --approach \"...\" (how we might "
+                       "get there), or --claim to start from a claim instead")
+        if a.kind == "study" and not a.question:
+            a.question = goal
+    elif a.approach:
+        raise Fail("--approach is for a study or tool started from a goal (the default), not with --claim")
     if a.kind == "tool":
         if not a.job or a.question:
             raise Fail("a tool has a --job (what it does for other repos), not a --question: it holds no research")
     elif not a.question:
         raise Fail(f"a {a.kind} needs --question")
-    if a.kind == "study" and not a.hypothesis:
-        raise Fail("a study needs --hypothesis in the person's own words; the scaffold does not substitute its question")
+    if a.kind == "study" and claim and not a.hypothesis:
+        raise Fail("a study started from a claim needs --hypothesis in the person's own words; the scaffold does not "
+                   "substitute its question (or start it from --goal and --approach, the default)")
     if a.hypothesis and a.kind != "study":
         raise Fail("--hypothesis is only for a study")
     if inside and a.visibility:
@@ -998,11 +1060,17 @@ def cmd_new(a):
         render(TEMPLATES / a.kind, dest, v, skip=skip)
     if not inside:
         render_agents(dest, a.kind, v, profile)
-    if hypothesis_scope and not a.exploratory:
+    if hypothesis_scope and not (a.exploratory or explore):
         (dest / "SCOPE.toml").write_text(hypothesis_scope, encoding="utf-8")
-    if a.exploratory:
+    if explore and a.kind == "study":
+        write_exploratory_study(dest, a.goal or a.question, a.approach)
+    elif explore:
+        write_exploratory(dest, a.name, a.job, a.approach, a.kind)
+    elif a.exploratory:
         write_exploratory(dest, a.name, a.question or a.job)
-    print(f"created {a.kind} {dest}" + (" (exploratory: no claim yet)" if a.exploratory else ""))
+    print(f"created {a.kind} {dest}" + (" (exploratory: a goal and a rough approach, no claim yet; size it with "
+                                        "the person first)" if explore else
+                                        " (exploratory: no claim yet)" if a.exploratory else ""))
 
     if inside:
         manifest = dest / f"{a.kind.upper()}.toml"
@@ -1371,9 +1439,20 @@ def check_hypothesis(root, rep, where="", profile=None):
         rep.ok(False, f"{where}HYPOTHESIS.toml does not parse: {e}")
         return
     rep.ok(h.get("format") == 1, f"{where}HYPOTHESIS.toml format must be 1")
-    rep.ok(bool(str(h.get("hypothesis", "")).strip()), f"{where}HYPOTHESIS.toml has no hypothesis")
     study = load_toml(root / "STUDY.toml")
     stage = study.get("stage")
+    exploring = h.get("mode") == "exploratory"
+    rep.ok(h.get("mode", "hypothesis") in ("hypothesis", "exploratory"),
+           f"{where}HYPOTHESIS.toml mode must be hypothesis or exploratory")
+    if exploring:
+        rep.ok(bool(str(h.get("goal", "")).strip()), f"{where}HYPOTHESIS.toml is exploratory but has no goal")
+        rep.ok(bool(str(h.get("approach", "")).strip()),
+               f"{where}HYPOTHESIS.toml is exploratory but has no approach (a rough idea of how)")
+        check_scope_decision(h, rep, f"{where}the study")
+        rep.ok(stage == "SKETCH", f"{where}an exploratory study stays at SKETCH: give it its hypothesis "
+               "(mode = \"hypothesis\") before it moves on")
+    else:
+        rep.ok(bool(str(h.get("hypothesis", "")).strip()), f"{where}HYPOTHESIS.toml has no hypothesis")
     corpus_revision = str(h.get("corpus_revision", ""))
     impact_management = str(h.get("impact_management", "person-managed"))
     rep.ok(impact_management in HYPOTHESIS_IMPACT_MANAGEMENT,
@@ -1460,7 +1539,7 @@ def check_hypothesis(root, rep, where="", profile=None):
         if status != "established":
             rep.ok(bool(str(e.get("goal", "")).strip()), f"{label}: {status} requires a goal",
                    warn=(not accepted_now and stage == "SKETCH"))
-            rep.ok(bool(str(e.get("counts_against", "")).strip()),
+            rep.ok(bool(str(e.get("counts_against", "")).strip()) or (exploring and status == "exploratory"),
                    f"{label}: {status} requires what would count against it",
                    warn=(not accepted_now and stage == "SKETCH"))
         if isinstance(evidence, list):
@@ -1637,6 +1716,18 @@ def check_calculator(root, c, stage, rep):
            + ("" if stage == "SKETCH" else " (required from PROBE on)"), warn=(stage == "SKETCH"))
 
 
+def check_scope_decision(rec, rep, name):
+    """An exploratory start records the first conversation's decision: one study or tool, or a split."""
+    scope = str(rec.get("scope", "")).strip()
+    rep.ok(bool(scope), f"{name}: the goal's scope is not decided yet. Talk it through with the person: does it "
+           "fit one study or tool, or should it be split? Record scope = \"one\" or \"split: a, b\" and "
+           "scope_decided", warn=True)
+    if scope:
+        rep.ok(scope == "one" or scope.startswith("split:"), f"{name}: scope must be \"one\" or \"split: a, b\"")
+        rep.ok(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(rec.get("scope_decided", "")))),
+               f"{name}: scope_decided must record the date of the decision (YYYY-MM-DD)")
+
+
 def check_exploratory(root, rep):
     """A unit marked exploratory (SCOPE.toml, stage = "exploratory", format 3) says so where it is read, and has
     no preregistered experiments: an experiment tests a claim, and it has none yet."""
@@ -1658,6 +1749,8 @@ def check_exploratory(root, rep):
         said = any("exploratory" in (unit / n).read_text(encoding="utf-8").lower()
                    for n in EXPLORATORY_DOCS if (unit / n).is_file())
         rep.ok(said, f"{name}: SCOPE.toml says exploratory, but its README doesn't; nothing it shows is a finding")
+        if "approach" in rec.get("exploration", {}):  # started from a goal: sized with the person first
+            check_scope_decision(rec["exploration"], rep, name)
         prereg = unit / "preregistrations"
         tested = sorted(d.name for d in prereg.iterdir() if d.is_dir()) if prereg.is_dir() else []
         rep.ok(not tested, f"{name}: exploratory, yet it has preregistered experiments ({', '.join(tested[:3])}); "
@@ -2478,6 +2571,12 @@ def main(argv=None):
                                             "what is being built)")
     n.add_argument("--hypothesis", help="for a study: the person's hypothesis, preserved verbatim in HYPOTHESIS.toml")
     n.add_argument("--job", "-j", help="for a tool: what it does for the repos that use it")
+    n.add_argument("--goal", help="for a study or tool (the default start): what it should achieve, in the person's "
+                                  "words")
+    n.add_argument("--approach", help="for a study or tool started from a goal: a rough idea of how to get there")
+    n.add_argument("--claim", action="store_true",
+                   help="start a study or tool from a claim instead of a goal (a study then needs --question and "
+                        "--hypothesis; a tool is scoped before anything scientific is built)")
     n.add_argument("--exploratory", action="store_true",
                    help="for a unit: no claim yet. --question (or --job) says what is being built; the unit is "
                         "labelled exploratory and nothing it shows is a finding")

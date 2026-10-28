@@ -16,11 +16,17 @@
   code runs as a separate process, never imported. Its `tolerances.toml` is its preregistration: the person
   decides it before anything is scored (propose bounds, never set them), and not meeting it is a failure. Not
   run automatically: run `make sims` when tagging a new version and commit each `results/<version>.json`.
-- **Scope before science.** The claim, then the features, then an evidence basis and the person's recorded
+- **Size the goal first.** A new study or tool starts exploratory, from the person's goal and a rough idea of
+  how to get there (`--goal`, `--approach`), not from a claim. Before building anything, talk it through with
+  the person, back and forth: is the goal one tool's worth, or should it be broken up? Propose a split when
+  it is too big, in plain words, and let the person decide. Record the decision as `scope = "one"` or
+  `scope = "split: a, b"` with `scope_decided` (YYYY-MM-DD) under `[exploration]` in `SCOPE.toml`; `scaffold check` warns until it is there.
+  After a split, each piece starts the same way. A claim comes later, when the person wants one.
+- **Scope before science, once there is a claim.** The claim, then the features, then an evidence basis and the person's recorded
   decision for every scientific feature, in `SCOPE.toml` (`.agents/protocols/SCOPE_PROTOCOL.md`). Infrastructure
   is yours to decide; nothing scientific is built before it is scoped. An override's experiment is
-  preregistered in the research corpus, not here. A tool the person calls exploratory skips this until it
-  gets its claim (`stage = "exploratory"` in `SCOPE.toml`); nothing it shows is a finding.
+  preregistered in the research corpus, not here. A tool starts exploratory and skips this until it gets its
+  claim (`stage = "exploratory"` in `SCOPE.toml`); nothing it shows is a finding.
 - **Releases** follow `.agents/protocols/TOOL_VERSIONING.md`; run `python3 .agents/tools/release-check` before
   tagging.
 - **One version.** `version` in `TOOL.toml`, `pyproject.toml` and `CITATION.cff`, and a `CHANGELOG.md`

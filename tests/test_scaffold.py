@@ -229,10 +229,14 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(scope["hypothesis_review_state"], "needs-review")
 
     def test_study_requires_hypothesis_and_unit_links_prevalidate_before_writes(self):
-        code, out = run("new", "study", "missing-hypothesis", "-q", "Does it?", "--dir", str(self.tmp),
+        code, out = run("new", "study", "missing-hypothesis", "-q", "Does it?", "--claim", "--dir", str(self.tmp),
                         "--profile", "polarizetech", "--visibility", "private", "--no-git")
         self.assertEqual(code, 1)
         self.assertIn("needs --hypothesis", out)
+        code, out = run("new", "study", "missing-goal", "-q", "Does it?", "--dir", str(self.tmp),
+                        "--profile", "polarizetech", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 1)  # the default start is a goal and an approach, not a bare question
+        self.assertIn("--approach", out)
         self.assertFalse((self.tmp / "missing-hypothesis").exists())
 
         repo = self.study()
@@ -381,7 +385,7 @@ class Scaffold(unittest.TestCase):
         self.assertEqual(scaffold.load_toml(repo / "sims" / "inner" / "SIM.toml")["profile"], "example")
 
     def tool(self, name="recorder"):
-        code, out = run("new", "tool", name, "-j", "Records a signal", "--dir", str(self.tmp),
+        code, out = run("new", "tool", name, "-j", "Records a signal", "--claim", "--dir", str(self.tmp),
                         "--profile", "example", "--visibility", "public", "--no-git")
         self.assertEqual(code, 0, out)
         repo = self.tmp / name
@@ -411,14 +415,14 @@ class Scaffold(unittest.TestCase):
 
     def test_tool_takes_a_job_not_a_question(self):
         for args in (["-q", "Does it?"], ["-q", "Does it?", "-j", "Records"], []):
-            code, out = run("new", "tool", "gauge", *args, "--dir", str(self.tmp), "--profile", "example",
-                            "--no-git")
+            code, out = run("new", "tool", "gauge", *args, "--claim", "--dir", str(self.tmp),
+                            "--profile", "example", "--no-git")
             self.assertEqual(code, 1, args)
             self.assertIn("--job", out)
         code, out = run("new", "study", "asks", "-j", "Records", "--dir", str(self.tmp), "--profile", "example",
                         "--no-git")
         self.assertEqual(code, 1)
-        self.assertIn("needs --question", out)
+        self.assertIn("--goal", out)
 
     def test_tool_holds_no_research(self):
         repo = self.tool()
@@ -1023,7 +1027,7 @@ jobs:
         self.assertIn("`pipeline__profile_route`", text)
         self.assertLess(text.index("Every question starts with the retrieval tool"),
                         text.index("## Agents and coordination"))
-        code, out = run("new", "tool", "recorder", "-j", "Records a signal", "--dir", str(self.tmp),
+        code, out = run("new", "tool", "recorder", "-j", "Records a signal", "--claim", "--dir", str(self.tmp),
                         "--profile", "polarizetech", "--visibility", "private", "--no-git")
         self.assertEqual(code, 0, out)  # every kind gets it, not only studies
         self.assertIn("**Every question starts with the retrieval tool.**",
@@ -1223,8 +1227,72 @@ jobs:
         self.assertEqual(run("new", "dataset", "mmn", "-q", "Is it there?", "--study", str(repo))[0], 0)
         self.assertFalse((repo / "datasets" / "mmn" / "SCOPE.toml").exists())
 
-    def test_exploratory_is_for_units_not_studies(self):
-        code, out = run("new", "study", "reef", "-q", "x", "--dir", str(self.tmp), "--profile", "example", "--exploratory")
+    def test_a_study_starts_from_a_goal_and_a_rough_approach(self):
+        code, out = run("new", "study", "reef", "--goal", "Map how reef sound changes with season",
+                        "--approach", "Record at two sites monthly and compare spectra", "--dir", str(self.tmp),
+                        "--profile", "example", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 0, out)
+        self.assertIn("size it with the person first", out)
+        repo = self.tmp / "reef"
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        fake_kit(repo)
+        h = scaffold.load_toml(repo / "HYPOTHESIS.toml")
+        self.assertEqual((h["mode"], h["hypothesis"], h["scope"]), ("exploratory", "", ""))
+        self.assertEqual(h["goal"], "Map how reef sound changes with season")
+        self.assertEqual(h["approach"], "Record at two sites monthly and compare spectra")
+        self.assertEqual((h["elements"][0]["status"], h["elements"][0]["basis"]), ("exploratory", "exploratory"))
+        readme = (repo / "README.md").read_text()
+        self.assertIn("**Scope:** exploratory", readme)
+        self.assertIn("**Rough approach:** Record at two sites", readme)
+        self.assertEqual(scaffold.load_toml(repo / "STUDY.toml")["question"], h["goal"])
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)  # no claim, no counts-against: still passes
+        self.assertIn("scope is not decided yet", out)
+        path = repo / "HYPOTHESIS.toml"
+        path.write_text(path.read_text().replace('scope = ""', 'scope = "split: seasons, sites"')
+                        .replace('scope_decided = ""', 'scope_decided = "2026-10-28"'))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("scope is not decided", out)
+        path.write_text(path.read_text().replace('scope = "split: seasons, sites"', 'scope = "maybe"'))
+        self.assertIn('scope must be "one" or "split: a, b"', run("check", str(repo))[1])
+        manifest = repo / "STUDY.toml"
+        manifest.write_text(manifest.read_text().replace('stage = "SKETCH"', 'stage = "PROBE"'))
+        self.assertIn("an exploratory study stays at SKETCH", run("check", str(repo))[1])
+
+    def test_a_tool_starts_from_a_goal_and_a_claim_is_opt_in(self):
+        code, out = run("new", "tool", "gauge", "--goal", "Read sound levels for any study", "--approach",
+                        "Wrap the calibrated meter code", "--dir", str(self.tmp), "--profile", "example",
+                        "--visibility", "public", "--no-git")
+        self.assertEqual(code, 0, out)
+        repo = self.tmp / "gauge"
+        rec = scaffold.load_toml(repo / "SCOPE.toml")
+        self.assertEqual((rec["stage"], rec["exploration"]["building"]),
+                         ("exploratory", "Read sound levels for any study"))
+        self.assertEqual((rec["exploration"]["approach"], rec["exploration"]["scope"]),
+                         ("Wrap the calibrated meter code", ""))
+        self.assertEqual(scaffold.load_toml(repo / "TOOL.toml")["job"], "Read sound levels for any study")
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        add_kit_block(repo)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("scope is not decided yet", out)
+        code, out = run("new", "tool", "meter", "-j", "Reads a level", "--dir", str(self.tmp), "--profile",
+                        "example", "--no-git")
+        self.assertEqual(code, 1)
+        self.assertIn("--approach", out)
+        code, out = run("new", "tool", "meter", "-j", "Reads a level", "--claim", "--dir", str(self.tmp),
+                        "--profile", "example", "--no-git")
+        self.assertEqual(code, 0, out)  # the claim-first start is still there, on request
+        self.assertFalse((self.tmp / "meter" / "SCOPE.toml").exists())
+        code, out = run("new", "tool", "dial", "-j", "x", "--claim", "--approach", "y", "--dir", str(self.tmp),
+                        "--profile", "example", "--no-git")
+        self.assertEqual(code, 1)
+        self.assertIn("--approach is for", out)
+
+    def test_exploratory_is_for_studies_and_units_not_workbenches(self):
+        code, out = run("new", "workbench", "reefs", "-q", "x", "--dir", str(self.tmp), "--profile", "example",
+                        "--exploratory")
         self.assertEqual(code, 1)
         self.assertIn("starts with its question", out)
         code, out = run("new", "sim", "wave", "-q", "A wave model", "--dir", str(self.tmp), "--profile", "example",
@@ -1342,9 +1410,10 @@ jobs:
 
         self.assertEqual(run("new", "app", "tone-explorer", "-q", "Hear it?", "--study", str(study))[0], 0)
         self.assertEqual(run("new", "sim", "cochlea", "-q", "A filterbank", "--inside", str(study))[0], 0)
-        self.assertEqual(run("new", "tool", "level-meter", "-j", "Reads a level", "--inside", str(study))[0], 0)
+        self.assertEqual(run("new", "tool", "level-meter", "-j", "Reads a level", "--claim", "--inside",
+                             str(study))[0], 0)
         self.assertEqual(run("new", "dataset", "assr", "-q", "40 Hz?", "--study", str(study))[0], 0)
-        self.assertEqual(run("new", "tool", "plotter", "-j", "Plots", "--inside", str(bench))[0], 0)  # general
+        self.assertEqual(run("new", "tool", "plotter", "-j", "Plots", "--claim", "--inside", str(bench))[0], 0)
         self.assertEqual(run("new", "sim", "tissue", "-q", "General", "--inside", str(bench))[0], 0)
         self.assertIn('path = "tools/level-meter"', (study / "STUDY.toml").read_text())
         self.assertTrue((bench / "tools" / "plotter" / "README.md").exists())

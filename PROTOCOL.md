@@ -108,7 +108,11 @@ working code (see [`ADOPTING.md`](ADOPTING.md)). A new repo leaves it out.
 
 ### The study hypothesis map
 
-`HYPOTHESIS.toml` is the study-level reasoning and dependency map. Its `hypothesis` preserves the person's
+`HYPOTHESIS.toml` is the study-level reasoning and dependency map. A study starts exploratory by default
+(`mode = "exploratory"`): the person's `goal`, a rough `approach`, and one exploratory element holding the goal,
+which needs no counts-against. The first conversation sizes the goal: one study, or a split into several, recorded
+as `scope` and `scope_decided`. An exploratory study stays at SKETCH. When the person has a hypothesis, `mode`
+becomes `hypothesis` and the rest of this section applies. Its `hypothesis` preserves the person's
 own wording. Specialist agents may propose how to decompose it, but the person settles the wording. Every
 `[[elements]]` entry is either a falsifiable `step` or an `integration` between two or more other elements.
 It has a revision, explicit `proposed`/`accepted` operator status and date, its evidence basis and the corpus
@@ -394,8 +398,9 @@ uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
   heading is advice; `scaffold check` does not read changelog sections.)
 - **A tool is scoped before anything scientific is built in it.** The prereg kit's `prereg` module settles
   the tool's claim with the person first, then its features, then an evidence basis and the person's recorded
-  decision for each scientific feature, in `SCOPE.toml` at the root. A tool the person marks exploratory
-  (§ 11) waits for all of that until it gets its claim. An override's experiment is preregistered
+  decision for each scientific feature, in `SCOPE.toml` at the root. A tool starts exploratory by default, from
+  a goal and a rough approach sized with the person (`scope`, `scope_decided` under `[exploration]`), and
+  waits for all of that until it gets its claim (§ 11); `--claim` starts it scoped instead. An override's experiment is preregistered
   in the research corpus, never in the tool. Infrastructure is the agent's to decide. `check` warns while a
   tool has no `SCOPE.toml`.
 - **A tool is released by the kit's `tool-versioning` protocol**, installed in place of the profile's
@@ -405,7 +410,7 @@ uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
   becomes its own repo when a number a study quotes depends on it (§ 4: before it is quoted, the tool it
   used is released and pinned), or when it is shared on its own. This is advice, not a check.
 
-`scaffold new tool <name> --job "..."` creates one. A tool is always its own repo; there is no `--inside`.
+`scaffold new tool <name> --goal "..." --approach "..."` creates one (`--job` is the same as `--goal`). A tool is always its own repo; there is no `--inside`.
 
 ---
 
@@ -488,8 +493,9 @@ effect that matters, is stated in its first `PREREG.md`. A unit the person calls
 the evidence step: `scaffold new <app|sim|tool|dataset|calculator> ... --exploratory` writes its `SCOPE.toml`
 with a build note (what is being built, and the date) and labels the unit's README. Nothing an exploratory
 unit shows is a finding, and it has no preregistered experiments: preregistering the first one is when its
-claim is settled and its record moves to `stage = "testing"`. A study or a workbench is never exploratory: it
-starts with its question. Needs kit 0.9.0 or later.
+claim is settled and its record moves to `stage = "testing"`. A study and a tool start exploratory by default,
+from a goal and a rough approach (`--goal`, `--approach`; `--claim` or a study's `--hypothesis` starts from a
+claim instead); a workbench is never exploratory: it starts with its question. Needs kit 0.9.0 or later.
 
 The kit is installed, not linked: `kit_ap init` copies the protocols into `.agents/` and pins the kit's
 commit in `.agents/kit_ap.lock`. `scaffold new` runs it for you when it can find the kit.
