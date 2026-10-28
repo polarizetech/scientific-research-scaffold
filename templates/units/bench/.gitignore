@@ -1,0 +1,4 @@
+# Reference checkouts fetched at their pinned commit (runs = "process"); never committed (TOOL_VERSIONING.md §1b).
+.references/
+.venv/
+__pycache__/

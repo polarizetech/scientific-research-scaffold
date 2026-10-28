@@ -1,0 +1,21 @@
+# The bench sim's own environment (TOOL_VERSIONING.md §1b): none of this is a runtime dependency of the tool.
+# Each reference with runs = "python" in SCOPE.toml is pinned here at the same tag; `scaffold check` matches them.
+[project]
+name = "{{name}}-sim-{{slug}}"
+version = "0.0.0"
+description = "Bench sim {{slug}} of {{name}}: {{question}}"
+requires-python = ">=3.11"
+dependencies = [
+{{reference_deps}}]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = false
+# If the tool is a Python package, install it from this checkout:
+# [tool.uv.sources]
+# {{name}} = { path = "../..", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,23 @@
+# Tolerances of bench sim {{slug}} (TOOL_VERSIONING.md §1b): its preregistration. Not meeting them is a
+# failure of the tool.
+# The tool's owner chooses them before any scored run; an assistant may propose values, never decide them.
+# run.py scores nothing until decided_by and decided are set, every metric has a bound, and this file is
+# committed. A change after a result was seen is a new decision: add a [[revisions]] entry and re-run.
+decided_by = ""   # the person who chose these bounds
+decided = ""      # YYYY-MM-DD
+
+# One table per metric and reference. A metric's value is its worst case over the sim's cases: the
+# largest value for at_most, the smallest for at_least.
+#
+# [[metrics]]
+# name = "max-abs-diff"
+# reference = "<a reference name from SCOPE.toml>"
+# at_most = 0.000001      # or: at_least = 0.99
+# why = "what this bound protects, and where the number comes from"
+#
+# [[revisions]]
+# metric = "max-abs-diff"
+# old = 0.000001
+# new = 0.00001
+# why = "..."
+# decided = "YYYY-MM-DD"

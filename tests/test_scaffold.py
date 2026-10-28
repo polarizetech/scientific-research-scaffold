@@ -2,7 +2,9 @@
 """End-to-end: render every template, check it passes; break it, check it fails."""
 import importlib.machinery
 import importlib.util
+import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -468,6 +470,179 @@ class Scaffold(unittest.TestCase):
             self.assertIn(needle, out)
         self.assertEqual(run("new", "sim", "x", "-q", "Q", "--dir", str(self.tmp), "--profile", "example",
                              "--compares", "y 1", "--no-git")[0], 1)  # --compares outside a tool
+
+    # ------------------------------------------------------------------------- bench sims (TOOL_VERSIONING.md §1b)
+
+    def reference_repo(self, tag="ref/v1.0.0"):
+        """A repo holding a reference implementation, with an annotated release tag."""
+        ref = self.tmp / "refs"
+        (ref / "sims" / "ref").mkdir(parents=True)
+        ref = ref.resolve()
+        (ref / "sims" / "ref" / "model.m").write_text("disp(1)\n")
+        for cmd in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "ref"], ["tag", "-a", tag, "-m", "2026-10-01"],
+                    ["commit", "-q", "--allow-empty", "-m", "after the tag"]):
+            subprocess.run(["git", *cmd], cwd=ref, check=True)
+        sha = subprocess.run(["git", "rev-parse", f"{tag}^{{commit}}"], cwd=ref, check=True, capture_output=True,
+                             text=True).stdout.strip()
+        return ref, sha
+
+    def bench(self, *refs):
+        repo = self.tool()
+        code, out = run("new", "sim", "vs-ref", "-q", "Agree with the reference", "--inside", str(repo),
+                        *[x for r in refs for x in ("--reference", r)])
+        self.assertEqual(code, 0, out)
+        return repo, repo / "sims" / "vs-ref"
+
+    def test_new_bench_passes_check(self):
+        ref, sha = self.reference_repo()
+        repo, bench = self.bench(f"ref={ref}@ref/v1.0.0#sims/ref,licence=MIT",
+                                 f"oct={ref}@ref/v1.0.0#sims/ref,licence=GPL-3.0,runs=process,command=octave model.m")
+        scope = scaffold.load_toml(bench / "SCOPE.toml")
+        self.assertEqual(scope["kind"], "bench")
+        self.assertEqual(scope["compares"], ["recorder 0.1.0", "ref ref/v1.0.0", "oct ref/v1.0.0"])
+        self.assertEqual([r["commit"] for r in scope["references"]], [sha, sha])  # the tag's, not the tip
+        self.assertEqual(scope["references"][0]["package"], "ref")
+        pyproject = (bench / "pyproject.toml").read_text()
+        self.assertIn(f'"ref @ git+{ref.as_uri()}@ref/v1.0.0#subdirectory=sims/ref"', pyproject)
+        self.assertNotIn("oct @", pyproject)  # a process reference is never installed
+        for f in ("run.py", "tolerances.toml", "tests/test_bench.py", ".gitignore", "README.md"):
+            self.assertTrue((bench / f).exists(), f)
+        self.assertNotIn("{{", (bench / "run.py").read_text())
+        self.assertFalse((repo / "EXPERIMENTS.md").exists())  # a bench sim is not an experiment
+        self.assertFalse((bench / "preregistrations").exists())
+        m = scaffold.load_toml(repo / "TOOL.toml")
+        self.assertEqual([(c["kind"], c["path"]) for c in m["comparisons"]], [("bench", "sims/vs-ref")])
+        self.assertIn("sims:", (repo / "Makefile").read_text())
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+
+    def test_new_bench_refuses_unpinned_or_unsafe_references(self):
+        ref, sha = self.reference_repo()
+        repo = self.tool()
+        for spec, needle in ((None, "needs --compares"),
+                             (f"ref={ref}@ref/v1.0.0", "say the reference's licence"),
+                             (f"ref={ref}@main,licence=MIT", "not a release tag"),
+                             (f"ref={ref}@ref/v9.9.9,licence=MIT", "could not find tag ref/v9.9.9"),
+                             (f"ref={ref}@ref/v1.0.0,licence=GPL-3.0", "runs as a separate process"),
+                             (f"ref={ref}@ref/v1.0.0,licence=MIT,commit=abc", "full 40-character commit"),
+                             (f"ref={ref}@ref/v1.0.0,licence=MIT,colour=red", "unknown option")):
+            code, out = run("new", "sim", "vs-ref", "-q", "Q", "--inside", str(repo),
+                            *(["--reference", spec] if spec else []))
+            self.assertEqual(code, 1, spec)
+            self.assertIn(needle, out)
+        self.assertFalse((repo / "sims").exists())
+        code, out = run("new", "sim", "vs-ref", "-q", "Q", "--inside", str(repo), "--reference",
+                        f"lgpl={ref}@ref/v1.0.0,licence=LGPL-2.1,commit={sha}")  # given commit: no lookup
+        self.assertEqual(code, 0, out)
+        self.assertIn("--reference is for a bench sim",
+                      run("new", "sim", "b", "-q", "Q", "--inside", str(self.study()), "--reference", "a=o/r@v1")[1])
+        self.assertIn("--compares is for a preregistered comparison unit",
+                      run("new", "sim", "sx", "-q", "Q", "--inside", str(repo), "--compares", "x 1",
+                          "--reference", "a=o/r@v1,licence=MIT")[1])
+
+    def test_bench_pins_are_checked(self):
+        ref, _ = self.reference_repo()
+        repo, bench = self.bench(f"ref={ref}@ref/v1.0.0#sims/ref,licence=MIT")
+        pyproject = bench / "pyproject.toml"
+        original = pyproject.read_text()
+        cases = {
+            original.replace("@ref/v1.0.0#", "@ref/v1.1.0#"): "pyproject.toml pins ref at ref/v1.1.0, SCOPE.toml declares ref/v1.0.0",
+            original.replace("@ref/v1.0.0#", "#"): "pins ref to a default branch, not a tag",
+            original.replace("#subdirectory=sims/ref", ""): "subdirectory '' differs",
+            original.replace(ref.as_uri(), "https://github.com/o/elsewhere"): "fetches ref from https://github.com/o/elsewhere",
+            original.replace(f'"ref @ git+{ref.as_uri()}@ref/v1.0.0#subdirectory=sims/ref",', ""): "ref is not pinned",
+            original.replace(f'"ref @ git+{ref.as_uri()}@ref/v1.0.0#subdirectory=sims/ref",', '"ref",') +
+            f'\n[tool.uv.sources]\nref = {{ git = "{ref.as_uri()}", branch = "main", subdirectory = "sims/ref" }}\n':
+                "pins ref to a branch, not a tag",
+        }
+        for text, needle in cases.items():
+            pyproject.write_text(text)
+            code, out = run("check", str(repo))
+            self.assertEqual(code, 1, needle)
+            self.assertIn(needle, out)
+        pyproject.write_text(original.replace(f'"ref @ git+{ref.as_uri()}@ref/v1.0.0#subdirectory=sims/ref",', '"ref",')
+                             + f'\n[tool.uv.sources]\nref = {{ git = "{ref.as_uri()}.git", tag = "ref/v1.0.0", '
+                               'subdirectory = "sims/ref" }\n')
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        scope = bench / "SCOPE.toml"
+        scope.write_text(re.sub(r'commit = "[0-9a-f]+"', 'commit = "abc123"', scope.read_text())
+                         .replace('licence = "MIT"', 'licence = "GPL-3.0-only"'))
+        code, out = run("check", str(repo))
+        self.assertIn("commit must be the tag's full 40-character commit", out)
+        self.assertIn("GPL-3.0-only code is imported", out)
+        (bench / "preregistrations").mkdir()
+        self.assertIn("tolerances are its preregistration", run("check", str(repo))[1])
+
+    def test_bench_tolerances_come_before_results(self):
+        ref, _ = self.reference_repo()
+        repo, bench = self.bench(f"ref={ref}@ref/v1.0.0#sims/ref,licence=MIT")
+        tolerances = bench / "tolerances.toml"
+        (bench / "results").mkdir()
+        result = bench / "results" / "0.1.0.json"
+
+        def score(sha):
+            result.write_text(json.dumps({"tolerances_sha256": sha, "passed": True,
+                                          "references": [{"name": "ref", "tag": "ref/v1.0.0"}]}))
+        score(hashlib.sha256(tolerances.read_bytes()).hexdigest())
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 1)
+        self.assertIn("tolerances are decided by the owner before scoring", out)
+        tolerances.write_text(tolerances.read_text().replace('decided_by = ""', 'decided_by = "the owner"')
+                              .replace('decided = ""', 'decided = "2026-10-27"')
+                              + '\n[[metrics]]\nname = "max-abs-diff"\nreference = "ref"\nat_most = 1e-6\n'
+                                'why = "float32 round-off"\n')
+        code, out = run("check", str(repo))
+        self.assertIn("scored against other tolerances than tolerances.toml now holds", out)
+        score(hashlib.sha256(tolerances.read_bytes()).hexdigest())
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        tolerances.unlink()
+        self.assertIn("no tolerances.toml", run("check", str(repo))[1])
+
+    @unittest.skipIf(sys.version_info < (3, 11), "the bench's run.py uses tomllib")
+    def test_bench_run_scores_and_records(self):
+        """The rendered run.py: refuses before tolerances are decided, fetches a process reference at its pinned
+        commit, scores the worst case against each bound, and writes a result `scaffold check` accepts."""
+        ref, sha = self.reference_repo()
+        repo, bench = self.bench(f"oct={ref}@ref/v1.0.0#sims/ref,licence=GPL-3.0,runs=process,command=octave")
+        loader = importlib.machinery.SourceFileLoader("bench_run", str(bench / "run.py"))
+        spec = importlib.util.spec_from_loader("bench_run", loader)
+        bench_run = importlib.util.module_from_spec(spec)
+        loader.exec_module(bench_run)
+        bench_run.cases = lambda: {"one": 1.0, "two": 2.0}
+        bench_run.outputs = lambda who, case, ref=None: case if who == "tool" else case + 1e-7
+        bench_run.measure = lambda metric, a, b: abs(a - b)
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "bench"], cwd=repo, check=True)
+        with self.assertRaisesRegex(SystemExit, "has not decided"):
+            bench_run.main(["--verify"])
+        tolerances = bench / "tolerances.toml"
+        tolerances.write_text('decided_by = "the owner"\ndecided = "2026-10-27"\n\n[[metrics]]\n'
+                              'name = "max-abs-diff"\nreference = "oct"\nat_most = 1e-6\nwhy = "round-off"\n')
+        with self.assertRaisesRegex(SystemExit, "uncommitted"):
+            bench_run.main([])
+        subprocess.run(["git", "commit", "-qam", "the owner's tolerances"], cwd=repo, check=True)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(bench_run.main([]), 0)
+        checkout = bench / ".references" / "oct"
+        self.assertEqual(subprocess.run(["git", "rev-parse", "HEAD"], cwd=checkout, capture_output=True,
+                                        text=True).stdout.strip(), sha)
+        result = json.loads((bench / "results" / "0.1.0.json").read_text())
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["references"][0]["commit"], sha)
+        self.assertAlmostEqual(result["metrics"][0]["value"], 1e-7)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        bench_run.outputs = lambda who, case, ref=None: case if who == "tool" else case + 1e-3
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(bench_run.main([]), 1)
+        self.assertFalse(json.loads((bench / "results" / "0.1.0.json").read_text())["passed"])
+        subprocess.run(["git", "tag", "-f", "-a", "ref/v1.0.0", "-m", "moved", "HEAD"], cwd=ref, check=True,
+                       capture_output=True)
+        shutil.rmtree(checkout)
+        with self.assertRaisesRegex(SystemExit, "the tag moved"):
+            bench_run.main(["--verify"])
 
     def test_tool_version_is_said_once(self):
         repo = self.tool()
