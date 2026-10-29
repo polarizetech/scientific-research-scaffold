@@ -568,7 +568,8 @@ and saying plainly what was not done.
 | no `lab-`/`sim-`/`study-` style prefix on the name | ✓ | ✓ | ✓ | ✓ |
 | README kind line matches the manifest | ✓ | ✓ | ✓ | ✓ |
 | `visibility` is decided (`public` or `private`, not `undecided`), with the date | ✓ | ✓ | | ✓ |
-| `CLAUDE.md`, `AGENTS.md`, `LICENSE` exist | ✓ | ✓ | | ✓ |
+| `CLAUDE.md`, `AGENTS.md` exist | ✓ | ✓ | | ✓ |
+| `LICENSE` exists (a warning while the study or tool is exploratory: no licence is needed yet) | ✓ | ✓ | | ✓ |
 | `HYPOTHESIS.toml`, `EXPERIMENTS.md` and `RESEARCH.md` exist | ✓ | | | |
 | every hypothesis element is established with linked evidence, or has a goal and counts-against | ✓ | | | |
 | every unit maps to elements and stale revision/evidence snapshots have an explicit disposition | ✓ | | | |

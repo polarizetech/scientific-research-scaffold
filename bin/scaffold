@@ -1250,6 +1250,18 @@ class Report:
         return cond
 
 
+def repo_is_exploratory(root, kind):
+    """A study in exploratory mode (HYPOTHESIS.toml), or a tool or sim whose root SCOPE.toml says
+    stage = "exploratory". Anything unreadable counts as not exploratory, so the stricter check applies."""
+    try:
+        if kind == "study":
+            return load_toml(root / "HYPOTHESIS.toml").get("mode") == "exploratory"
+        scope = root / "SCOPE.toml"
+        return scope.exists() and load_toml(scope).get("stage") == "exploratory"
+    except Exception:  # noqa: BLE001 - a parse error is reported elsewhere
+        return False
+
+
 def check_repo(root, rep, nested=False, profile_override=None):
     root = Path(root).resolve()
     manifests = [k for k in KINDS if (root / f"{k.upper()}.toml").exists()]
@@ -1313,7 +1325,13 @@ def check_repo(root, rep, nested=False, profile_override=None):
                "visibility_decided must be the date (YYYY-MM-DD) visibility was decided")
         required = ("CLAUDE.md", "AGENTS.md") if kind == "workbench" else ("CLAUDE.md", "AGENTS.md", "LICENSE") + (
             ("CHANGELOG.md", "CITATION.cff") if kind == "tool" else ("EXPERIMENTS.md", "RESEARCH.md"))
+        exploring = repo_is_exploratory(root, kind)
         for f in required:
+            if f == "LICENSE" and exploring:
+                # The person's decision (2026-10-29): exploratory work needs no licence yet.
+                rep.ok((root / f).exists(), "LICENSE is missing: not needed while exploratory; add one before the "
+                       "work leaves exploration or is shared outside", warn=True)
+                continue
             rep.ok((root / f).exists(), f"{f} is missing")
         if kind == "tool":
             check_tool(root, m, rep)
