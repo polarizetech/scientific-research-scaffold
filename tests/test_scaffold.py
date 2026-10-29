@@ -1297,6 +1297,31 @@ jobs:
         manifest.write_text(manifest.read_text().replace('stage = "SKETCH"', 'stage = "PROBE"'))
         self.assertIn("an exploratory study stays at SKETCH", run("check", str(repo))[1])
 
+    def test_exploratory_work_needs_no_licence_yet(self):
+        """The person's decision (2026-10-29): an exploratory study or tool needs no LICENSE; claimed work does."""
+        code, out = run("new", "study", "drift", "--goal", "See how drift sounds", "--approach", "Listen, then look",
+                        "--dir", str(self.tmp), "--profile", "example", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 0, out)
+        repo = self.tmp / "drift"
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        fake_kit(repo)
+        (repo / "LICENSE").unlink()
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("LICENSE is missing: not needed while exploratory", out)
+        claimed = self.study()
+        (claimed / "LICENSE").unlink()
+        code, out = run("check", str(claimed))
+        self.assertEqual(code, 1, out)
+        self.assertIn("LICENSE is missing", out)
+        self.assertNotIn("not needed while exploratory", out)
+        tool = self.tmp / "gauge"
+        self.assertEqual(run("new", "tool", "gauge", "--goal", "Read levels", "--approach", "A meter",
+                             "--dir", str(self.tmp), "--profile", "example", "--visibility", "private",
+                             "--no-git")[0], 0)
+        (tool / "LICENSE").unlink()
+        self.assertIn("not needed while exploratory", run("check", str(tool))[1])
+
     def test_a_tool_starts_from_a_goal_and_a_claim_is_opt_in(self):
         code, out = run("new", "tool", "gauge", "--goal", "Read sound levels for any study", "--approach",
                         "Wrap the calibrated meter code", "--dir", str(self.tmp), "--profile", "example",
