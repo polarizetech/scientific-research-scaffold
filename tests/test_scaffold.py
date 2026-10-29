@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -325,21 +326,30 @@ class Scaffold(unittest.TestCase):
         repo = self.study()
         code, out = run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))
         self.assertEqual(code, 0, out)
-        self.assertIn("https://joshuas-macbook-pro.tailc463ae.ts.net/explorer/", out)
+        self.assertIn("https://joshuas-macbook-pro.tailc463ae.ts.net/explorer/v1/", out)
         serve = repo / "apps" / "explorer" / "v1" / "serve.py"
         self.assertIn('TAILNET_URL = os.environ.get("TAILNET_URL", '
                       '"https://joshuas-macbook-pro.tailc463ae.ts.net")', serve.read_text())
         self.assertIn('SLUG = "explorer"', serve.read_text())
-        for env, want in ((None, "https://joshuas-macbook-pro.tailc463ae.ts.net/explorer/"),
-                          ("https://other.example.ts.net/", "https://other.example.ts.net/explorer/")):
+        for env, want in ((None, "https://joshuas-macbook-pro.tailc463ae.ts.net/explorer/v1/"),
+                          ("https://other.example.ts.net/", "https://other.example.ts.net/explorer/v1/")):
             e = {k: v for k, v in os.environ.items() if k != "TAILNET_URL"}
             if env:
                 e["TAILNET_URL"] = env
             got = subprocess.run([sys.executable, "-c",
                                   f"import runpy; m = runpy.run_path({str(serve)!r}, run_name='x'); "
-                                  "print(m['TAILNET_URL'] + '/' + m['SLUG'] + '/')"],
+                                  "print(m['TAILNET_URL'] + '/' + m['SLUG'] + '/' + m['VERSION'] + '/')"],
                                  env=e, capture_output=True, text=True, check=True).stdout.strip()
             self.assertEqual(got, want)
+
+    def test_an_app_url_ends_in_its_version(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
+        serve = repo / "apps" / "explorer" / "v1" / "serve.py"
+        m = runpy.run_path(str(serve), run_name="x")
+        for path, want in (("/v1/app.js", "/app.js"), ("/explorer/v1/app.js", "/app.js"),
+                           ("/explorer/app.js", "/app.js"), ("/v1/", "/"), ("/app.js", "/app.js")):
+            self.assertEqual(m["unmount"](path), want, path)
 
     def test_a_profile_without_a_tailnet_prints_none(self):
         repo = self.study("plain", profile="example")

@@ -5,8 +5,9 @@
 - **Apps say where they are viewed beyond localhost.** The person's requirement (2026-10-29): scaffolded
   apps use one tailnet host by default, with an environment variable to change it. A profile may set
   `[serving] tailnet_url`; `scaffold new app` writes it into the app's `serve.py` as the default of
-  `TAILNET_URL` (read from the environment first), and the app prints `$TAILNET_URL/<slug>/` beside its
-  localhost URL. `new app` prints the same line. A profile with no `tailnet_url` prints nothing. The
+  `TAILNET_URL` (read from the environment first), and the app prints `$TAILNET_URL/<slug>/<version>/` beside its
+  localhost URL, so the URL ends in the version (`$TAILNET_URL/<slug>/v1/`); a bare `/` redirects there and the
+  `/<slug>` and `/<version>` prefixes are stripped. `new app` prints the same line. A profile with no `tailnet_url` prints nothing. The
   polarizetech profile names `https://joshuas-macbook-pro.tailc463ae.ts.net`. Existing apps are not
   touched: `serve.py` belongs to the repo once written.
 

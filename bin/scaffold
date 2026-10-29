@@ -1166,7 +1166,7 @@ def new_app(a):
     print(f"created app {dest}\n  run: python3 {dest.relative_to(study)}/serve.py")
     tailnet = os.environ.get("TAILNET_URL", v["tailnet_url"]).rstrip("/")
     if tailnet:
-        print(f"  tailnet: {tailnet}/{a.name}/ once the gateway lists it (TAILNET_URL overrides the host)")
+        print(f"  tailnet: {tailnet}/{a.name}/{version}/ once the gateway lists it (TAILNET_URL overrides the host)")
 
 
 def new_unit(a):
