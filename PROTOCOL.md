@@ -293,6 +293,9 @@ to research, a `scaffold new` command, and `check` rules. It is added to this se
 - Each app is `index.html` + `app.js` + `app.css` + `serve.py`, with no build step unless it needs one.
 - `serve.py` serves the design system through an **allow-list** of named files, never a directory mount,
   and the app must still work unstyled if the design system is absent.
+- Beyond localhost, an app is viewed at `$TAILNET_URL/<slug>/<version>/` when the profile names a tailnet gateway
+  (`[serving] tailnet_url`). `serve.py` reads `TAILNET_URL` from the environment first, so the host is a
+  setting and never a constant in the app; this is advice, not something `check` enforces.
 - An app that shows a number shows **how sure** the number is, in a label the design system never lets be
   hidden.
 - `scaffold new app <slug>` adds that app's next version (v1 for a new slug) and its manifest entry.

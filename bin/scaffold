@@ -355,6 +355,9 @@ def template_vars(profile, name, question, **extra):
         "design_name": repo_basename(ds.get("repo", "")),
         "design_css": ds.get("css", "design.css"),
         "design_js_tag": f'<script type="module" src="design/{ds["js"]}"></script>' if ds.get("js") else "",
+        # Where apps are viewed beyond localhost (a tailnet gateway). An app's serve.py reads
+        # TAILNET_URL first, so this is only the default it falls back to; empty means none.
+        "tailnet_url": str(profile.get("serving", {}).get("tailnet_url", "")).rstrip("/"),
         "scaffold_ref": SCAFFOLD_REF,
         "agents_ref": agents_ref(),
         "design_system": f"`{ds['repo']}`" if ds.get("repo") else
@@ -1149,7 +1152,7 @@ def new_app(a):
         study, dest.relative_to(study).as_posix(), a.hypothesis_element or [], a.question or "")
     port = str(8300 + (sum(map(ord, m.get("name", ""))) % 50) * 10 + len(apps) % 10)
     v = template_vars(profile, m.get("name", study.name), a.question, title=f"{a.name} ({version})",
-                      version=version, port=port)
+                      version=version, port=port, slug=a.name)
     render(TEMPLATES / "app", dest, v)
     (dest / "serve.py").chmod(0o755)
     if hypothesis_scope and not a.exploratory:
@@ -1161,6 +1164,9 @@ def new_app(a):
                 f"question = {toml_str(a.question)}\nstatus = \"active\"")
     register_hypothesis_unit(study, hypothesis_link)
     print(f"created app {dest}\n  run: python3 {dest.relative_to(study)}/serve.py")
+    tailnet = os.environ.get("TAILNET_URL", v["tailnet_url"]).rstrip("/")
+    if tailnet:
+        print(f"  tailnet: {tailnet}/{a.name}/{version}/ once the gateway lists it (TAILNET_URL overrides the host)")
 
 
 def new_unit(a):
