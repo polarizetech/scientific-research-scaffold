@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.12.0 (2026-10-29)
+
+- Generated CI checks out `v0.12.0`; the `agents` submodule is scientific-research-agents v0.10.0.
 
 - **Exploratory work needs no licence yet.** The person's requirement (2026-10-29): "it's just exploratory. It shouldn't need a hypothesis or a license." `scaffold check` now warns, instead of failing, when an exploratory repo has no `LICENSE`: a study whose `HYPOTHESIS.toml` has `mode = "exploratory"`, or a tool or sim whose root `SCOPE.toml` has `stage = "exploratory"`. Claimed work still needs one. (An exploratory study already needed no hypothesis; that check shipped with the exploratory default above and is in this release too.)
 

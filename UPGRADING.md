@@ -16,6 +16,21 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.12.0
+
+**`scaffold update` does:** moves the CI ref to `v0.12.0`; refreshes the scaffold section of `AGENTS.md` from
+scientific-research-agents v0.10.0 ("Retrieval first, for every question", and the rule that
+`pipeline__profile_route` picks the specialist); and, when the profile names a retrieval tool, adds the
+`UserPromptSubmit` hook (`scaffold rag-hook --server NAME`) beside the session hook.
+
+**A session does:** nothing is required. `scaffold check` now passes an exploratory study with no
+hypothesis, and only warns about a missing `LICENSE` in exploratory work (a study with `mode =
+"exploratory"`, a tool or sim whose root `SCOPE.toml` says `stage = "exploratory"`); claimed work still
+needs both. To move an existing study that has no claim yet to exploratory, set `mode = "exploratory"`, a
+`goal` and an `approach` in `HYPOTHESIS.toml`, and record the sizing decision (`scope`, `scope_decided`)
+with the person: that decision is theirs. Existing apps' `serve.py` is not touched; printing the tailnet
+URL there is an optional hand edit.
+
 ## v0.11.1
 
 **`scaffold update` does:** moves the CI ref to `v0.11.1` and refreshes public agent briefs from
