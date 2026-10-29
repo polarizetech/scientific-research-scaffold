@@ -29,6 +29,9 @@ env_aliases = []                             # older env var names, still honour
 repo = ""                                    # where it lives, for the link in AGENTS.md
 server = ""                                  # the MCP server's name as sessions see it
 
+[serving]                                    # where apps are viewed beyond localhost
+tailnet_url = ""                              # e.g. https://<host>.<tailnet>.ts.net; leave empty for none; TAILNET_URL overrides it at run time
+
 [licence]
 code = "MIT"
 docs = "CC-BY-4.0"

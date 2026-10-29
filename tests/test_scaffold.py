@@ -53,6 +53,7 @@ class Scaffold(unittest.TestCase):
         os.environ.update(GIT_ENV)
         self._env["KIT_AP"] = os.environ.pop("KIT_AP", None)
         self._env["SCAFFOLD_PROFILE"] = os.environ.pop("SCAFFOLD_PROFILE", None)
+        self._env["TAILNET_URL"] = os.environ.pop("TAILNET_URL", None)
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
@@ -319,6 +320,32 @@ class Scaffold(unittest.TestCase):
         self.assertEqual([(a["slug"], a["version"]) for a in scaffold.load_toml(repo / "STUDY.toml")["apps"]],
                          [("explorer", "v1"), ("explorer", "v2"), ("other", "v1")])
         self.assertEqual(run("check", str(repo))[0], 0)
+
+    def test_an_app_prints_its_tailnet_url_and_takes_an_override(self):
+        repo = self.study()
+        code, out = run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("https://joshuas-macbook-pro.tailc463ae.ts.net/explorer/", out)
+        serve = repo / "apps" / "explorer" / "v1" / "serve.py"
+        self.assertIn('TAILNET_URL = os.environ.get("TAILNET_URL", '
+                      '"https://joshuas-macbook-pro.tailc463ae.ts.net")', serve.read_text())
+        self.assertIn('SLUG = "explorer"', serve.read_text())
+        for env, want in ((None, "https://joshuas-macbook-pro.tailc463ae.ts.net/explorer/"),
+                          ("https://other.example.ts.net/", "https://other.example.ts.net/explorer/")):
+            e = {k: v for k, v in os.environ.items() if k != "TAILNET_URL"}
+            if env:
+                e["TAILNET_URL"] = env
+            got = subprocess.run([sys.executable, "-c",
+                                  f"import runpy; m = runpy.run_path({str(serve)!r}, run_name='x'); "
+                                  "print(m['TAILNET_URL'] + '/' + m['SLUG'] + '/')"],
+                                 env=e, capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual(got, want)
+
+    def test_a_profile_without_a_tailnet_prints_none(self):
+        repo = self.study("plain", profile="example")
+        code, out = run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("tailnet:", out)
 
     def test_the_earlier_app_layout_still_passes(self):
         repo = self.study()
