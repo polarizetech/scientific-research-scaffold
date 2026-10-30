@@ -291,8 +291,10 @@ to research, a `scaffold new` command, and `check` rules. It is added to this se
   the whole study) passes `check` as it is: an entry with no `path` is looked for at `apps/<slug>/<version>/`
   and then at `apps/<version>-<slug>/`. Nothing has to move.
 - Each app is `index.html` + `app.js` + `app.css` + `serve.py`, with no build step unless it needs one.
-- `serve.py` serves the design system through an **allow-list** of named files, never a directory mount,
-  and the app must still work unstyled if the design system is absent.
+- `serve.py` serves the design system through an **allow-list** of named files and its stylesheet's fonts,
+  never a directory mount. It reads them from a local checkout at the pinned tag, whatever branch the
+  checkout has out. If they can't be read, the app still works, and its page carries a banner saying why
+  and how to fix it, so an unstyled page is never mistaken for the design.
 - Beyond localhost, an app is viewed at `$TAILNET_URL/<slug>/<version>/` when the profile names a tailnet gateway
   (`[serving] tailnet_url`). `serve.py` reads `TAILNET_URL` from the environment first, so the host is a
   setting and never a constant in the app; this is advice, not something `check` enforces.
@@ -314,8 +316,13 @@ When it names one:
 - a new repo's README gets a **Design** section, and its manifest a `[design]` table: `theme`, the
   `data-theme` its pages pin (a new app's `index.html` carries it), and `allow_hex`, the files allowed
   hand-written hex colours;
+- a new app's `index.html` links the stylesheet (and script), with the profile's `body_class` on `<body>`,
+  and its own README gets a **Design** section saying what the page is wired to, so a session rewriting
+  the page keeps it;
 - `scaffold check` **warns** when a repo with pages (HTML, CSS, TSX, JSX, Vue, Svelte) has none that
-  references the design system (by package, repo or stylesheet name), when a `package.json` pins it to a
+  references the design system (by package, repo or stylesheet name), when a full HTML page doesn't load it
+  or lacks the profile's `body_class` (a page whose script is a bundler entry, `.ts`/`.tsx`/`.jsx`, loads it
+  from code and is skipped), when a `package.json` pins it to a
   branch, or when a page hand-writes a hex colour outside `allow_hex` (a token's fallback, `var(--border,
   #ccc)`, is not counted: it keeps a page usable unstyled). These are warnings, not failures, so
   existing pages can move over when they are next changed. A `data-theme` and a project's tag differing
@@ -615,7 +622,7 @@ and saying plainly what was not done.
 | a unit whose `SCOPE.toml` says `stage = "exploratory"` says so in its README (or `CALCULATOR.md`), and has no preregistered experiments | ✓ | ✓ | ✓ | ✓ |
 | the corpus is not a submodule | ✓ | ✓ | | ✓ |
 | no absolute home-directory paths in tracked text files | warning | warning | warning | warning |
-| when the profile names a design system and the repo has pages: a page references it, a `package.json` pins it to a tag, and no page hand-writes a hex colour outside `[design] allow_hex` (§ 6) | warning | warning | | warning |
+| when the profile names a design system and the repo has pages: a page references it, each HTML page loads it (with `body_class`), a `package.json` pins it to a tag, and no page hand-writes a hex colour outside `[design] allow_hex` (§ 6) | warning | warning | | warning |
 
 A **workbench** is checked for: a valid manifest (no stage), the README kind line, decided visibility,
 `CLAUDE.md` and `AGENTS.md`, the prereg kit, private folders that exist and a private repo when any are

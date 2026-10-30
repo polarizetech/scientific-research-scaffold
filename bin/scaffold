@@ -407,7 +407,8 @@ def design_vars(profile):
     """The design system's placeholders. Each is empty when the profile names none, so nothing changes."""
     ds = design_system(profile)
     v = {"design_label": "", "design_ref": "", "design_rules": "", "design_source": "", "design_house_rules": "",
-         "design_readme": "", "design_manifest": "", "design_theme_attr": ""}
+         "design_readme": "", "design_manifest": "", "design_theme_attr": "", "design_app_readme": "",
+         "design_body_attr": ""}
     if not ds:
         return v
     ref, repo, pkg, rules = ds["ref"], ds.get("repo", ""), ds.get("package", ""), ds.get("rules", "")
@@ -433,11 +434,32 @@ def design_vars(profile):
                           "of truth. The theme the pages pin (`data-theme`), if any, is `theme` under `[design]` in "
                           "the manifest beside this README, and `allow_hex` lists the files allowed hand-written hex "
                           "colours.\n"),
+        "design_body_attr": f' class="{ds["body_class"]}"' if ds.get("body_class") else "",
+        "design_app_readme": design_app_readme(ds, label, rules),
         "design_manifest": ("\n[design]                         # the design system's settings for this repo (README § Design)\n"
                             'theme = ""                       # the data-theme pages pin; empty means its default\n'
                             "allow_hex = []                   # files allowed hand-written hex colours (glob patterns)\n"),
     })
     return v
+
+
+def design_app_readme(ds, label, rules):
+    """The Design section of an app's README: what the page is wired to, so a session editing it keeps that."""
+    css, js, cls, ref = ds.get("css", "design.css"), ds.get("js", ""), ds.get("body_class", ""), ds["ref"]
+    wired = [f"`design/{css}`"] + ([f"`design/{js}`"] if js else [])
+    keep = " and ".join(wired) + (f", with `class=\"{cls}\"` on `<body>`" if cls else "")
+    repo = ds.get("repo", "")
+    served = (f"`serve.py` serves those files from a checkout of `{repo}` at `{ref}`, whatever branch it has out. "
+              "A yellow banner across the page means it can't, and says how to fix it.") if repo else \
+             "Put the design system's files where `index.html` links them."
+    return (f"\n## Design\n\nThis page uses {label}, pinned to `{ref}`. Its [instructions]({rules}) are the source of "
+            "truth: read them before changing the page.\n\n"
+            f"- `index.html` links {keep}. Keep them if you rewrite the page.\n"
+            f"- {served}\n"
+            "- Colours, type, spacing and radii come from its tokens (`var(--...)`) and components. `app.css` holds "
+            "layout only.\n"
+            "- `scaffold check` warns about a page that doesn't load the design system and about hand-written hex "
+            "colours.\n")
 
 
 def agents_ref():
@@ -1526,6 +1548,7 @@ def check_repo(root, rep, nested=False, profile_override=None):
 
 
 DESIGN_SUFFIXES = {".html", ".htm", ".css", ".scss", ".tsx", ".jsx", ".vue", ".svelte"}
+BUNDLER_ENTRY_RE = re.compile(r"<script\b[^>]*\bsrc\s*=\s*[\"'][^\"']+\.(?:tsx?|jsx)[\"']", re.I)
 DESIGN_SKIP = {"node_modules", "dist", "build", "vendor", "third_party", "third-party"}
 HEX_RE = re.compile(r"(?<![\w#&/.-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])")
 # What looks like a colour but is a reference to an element: links, ids, selectors in scripts.
@@ -1597,6 +1620,26 @@ def check_design(root, m, profile, rep):
     rep.ok(bool(refs), f"pages here ({', '.join(pages[:3])}{' ...' if len(pages) > 3 else ''}) do not reference the "
            f"design system, {ds['name']} at {ds['ref']} (README § Design)", warn=True)
     rep.ok(not pins, f"the design system must be pinned to a release tag, not a branch: {', '.join(pins)}", warn=True)
+    off, bare = [], []
+    for rel in pages:  # each full HTML document loads it, unless a bundler entry script does that
+        if Path(rel).suffix not in (".html", ".htm"):
+            continue
+        try:
+            text = (root / rel).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        body = re.search(r"<body\b[^>]*>", text, re.I)
+        if not body or BUNDLER_ENTRY_RE.search(text):
+            continue
+        if not any(n in text for n in names):
+            off.append(rel)
+        elif ds.get("body_class") and ds["body_class"] not in re.findall(
+                r"[\w-]+", (re.search(r"class\s*=\s*[\"']([^\"']*)", body.group(0)) or [None, ""])[1]):
+            bare.append(rel)
+    rep.ok(not off, f"pages that don't load {ds['name']} (link its {ds.get('css', 'stylesheet')}, as the app "
+           f"template does): " + ", ".join(off[:5]) + (" ..." if len(off) > 5 else ""), warn=True)
+    rep.ok(not bare, f"pages that load {ds['name']} without class=\"{ds.get('body_class')}\" on <body>: "
+           + ", ".join(bare[:5]) + (" ..." if len(bare) > 5 else ""), warn=True)
     hits = []
     for rel in pages:
         if any(fnmatch.fnmatch(rel, g) for g in allow) or Path(rel).name == ds.get("css"):
