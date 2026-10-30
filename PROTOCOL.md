@@ -300,6 +300,31 @@ to research, a `scaffold new` command, and `check` rules. It is added to this se
   hidden.
 - `scaffold new app <slug>` adds that app's next version (v1 for a new slug) and its manifest entry.
 
+### The design system
+
+A profile may name a design system under `[design]`: a `name`, its `package` (for build-based apps), its
+git `repo`, or both, the release tag it is pinned to (`ref`, never a branch), and `rules`, the URL of its own
+instructions at that tag. A profile that names none (no `repo` and no `package`) changes nothing below.
+When it names one:
+
+- every repo's `AGENTS.md` tells assistants that anything visual or user-facing (a web UI, a dashboard, a
+  chart, a figure or report page, slides) uses it, and that its own instructions are the source of truth.
+  They are linked, never copied. A profile's `house_rules` add short reminders, each naming the file that
+  holds the rule;
+- a new repo's README gets a **Design** section, and its manifest a `[design]` table: `theme`, the
+  `data-theme` its pages pin (a new app's `index.html` carries it), and `allow_hex`, the files allowed
+  hand-written hex colours;
+- `scaffold check` **warns** when a repo with pages (HTML, CSS, TSX, JSX, Vue, Svelte) has none that
+  references the design system (by package, repo or stylesheet name), when a `package.json` pins it to a
+  branch, or when a page hand-writes a hex colour outside `allow_hex` (a token's fallback, `var(--border,
+  #ccc)`, is not counted: it keeps a page usable unstyled). These are warnings, not failures, so
+  existing pages can move over when they are next changed. A `data-theme` and a project's tag differing
+  from the profile's are not checked: a repo moves its pin when it chooses.
+
+Everything else (tokens over literals, labels for how sure a number is, how a view of data is chosen,
+standard techniques and public or synthetic demo data in a public repo) is advice, which the design
+system's own instructions set out.
+
 ---
 
 ## 7. Sims
@@ -590,6 +615,7 @@ and saying plainly what was not done.
 | a unit whose `SCOPE.toml` says `stage = "exploratory"` says so in its README (or `CALCULATOR.md`), and has no preregistered experiments | ✓ | ✓ | ✓ | ✓ |
 | the corpus is not a submodule | ✓ | ✓ | | ✓ |
 | no absolute home-directory paths in tracked text files | warning | warning | warning | warning |
+| when the profile names a design system and the repo has pages: a page references it, a `package.json` pins it to a tag, and no page hand-writes a hex colour outside `[design] allow_hex` (§ 6) | warning | warning | | warning |
 
 A **workbench** is checked for: a valid manifest (no stage), the README kind line, decided visibility,
 `CLAUDE.md` and `AGENTS.md`, the prereg kit, private folders that exist and a private repo when any are

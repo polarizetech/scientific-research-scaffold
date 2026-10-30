@@ -11,6 +11,6 @@ private = []
 
 [corpus]
 project = ""                     # empty: each study names its own corpus project
-
+{{design_manifest}}
 # Studies, and the general tools, sims and apps, are appended below by
 # `scaffold new study|tool|sim|app <name> --inside .`

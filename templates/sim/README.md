@@ -15,3 +15,4 @@ and predicted before it is run.
 | `preregistrations/<EID>/` | `PREREG.md`, `DEVIATIONS.md`, `RESULTS.md`, `ENV.lock`, config, `run.py`, outputs |
 | `ASSUMPTIONS.md` | every parameter and where its value came from |
 | `CHANGELOG.md` | what changed between model versions, and why |
+{{design_readme}}

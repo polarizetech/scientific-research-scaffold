@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Visual work uses the profile's design system.** The person's requirement (2026-10-30): scaffolded
+  projects use the polarize-ui design system whenever they build a visual or user-facing experience. The
+  setting is generic: a profile's `[design]` table now takes `name`, `package`, `repo`, `ref` (a release tag),
+  `rules` (the URL of its own instructions at that tag) and optional `house_rules`; `scaffold` refuses a
+  profile whose `ref` is a branch or whose `rules` names another tag. When a profile names one, every repo's
+  `AGENTS.md` gets `agent-rules/design.md` (and the house rules), a new repo's README gets a **Design**
+  section and its manifest a `[design]` table (`theme`, the pinned `data-theme`, which a new app's
+  `index.html` carries; `allow_hex`), and `scaffold check` warns when pages reference no design system, pin
+  it to a branch, or hand-write hex colours outside `allow_hex`. Warnings for now, not failures. A profile
+  that names none changes nothing. The polarizetech profile pins `@polarizetech/polarize-ui` at `v0.6.5` (it
+  was `v0.4.2`), with house rules pointing at its `README.md`, `CLAUDE.md`, `METHOD.md` and `shadcn/SHADCN.md`.
+
 ## v0.12.0 (2026-10-29)
 
 - Generated CI checks out `v0.12.0`; the `agents` submodule is scientific-research-agents v0.10.0.

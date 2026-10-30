@@ -16,6 +16,19 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## Unreleased
+
+**`scaffold update` does:** when the repo's profile names a design system, adds the design rule (and the
+profile's house rules) to the scaffold section of `AGENTS.md`. With a profile that names none, nothing
+changes. It does not touch the README, the manifest or any page.
+
+**A session does:** in a repo whose profile names a design system, add the README's **Design** section and
+a `[design]` table to the manifest (`theme = ""`, `allow_hex = []`), as a new repo of the same kind has them.
+Record the `data-theme` the pages already pin as `theme`. Then read `scaffold check`'s design warnings, which
+do not fail CI: list files that must keep hand-written colours under `allow_hex` (decide that with the
+person), and move other pages to the design system's tokens when they are next changed, not as a sweep. A
+`package.json` that pins the design system to a branch should move to a release tag.
+
 ## v0.12.0
 
 **`scaffold update` does:** moves the CI ref to `v0.12.0`; refreshes the scaffold section of `AGENTS.md` from
