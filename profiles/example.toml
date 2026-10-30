@@ -14,11 +14,15 @@ repo = "polarizetech/adaptive-preregistration"
 modules = ["experiment-pr-log"]              # added after init's defaults (core, prereg, convo-log)
 tool_modules = ["tool-versioning"]           # for a tool repo instead: versions and releases (prereg, a default, scopes it)
 
-[design]                                     # the design system every app serves; leave repo empty for none
-repo = ""
-ref = ""
-css = "design.css"
-js = ""
+[design]                                     # the design system every page uses; leave repo and package empty for none
+name = ""                                    # what to call it; defaults to the repo's name
+package = ""                                 # its package name, for build-based apps (npm, or a git dependency)
+repo = ""                                    # its git source, owner/name on GitHub
+ref = ""                                     # the release tag it is pinned to, never a branch
+rules = ""                                   # its own instructions, at that tag; they are the source of truth
+css = "design.css"                           # the stylesheet a zero-build page links
+js = ""                                      # its script, if it has one
+house_rules = []                             # short reminders for assistants, each naming the file that holds the rule
 
 [workbench]                                  # shared tools not yet released; leave repo empty for none
 repo = ""

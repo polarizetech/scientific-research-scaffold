@@ -10,3 +10,4 @@ model = "model"
 [corpus]
 project = ""                     # empty until findings from this sim have a corpus home
 claim_prefix = ""
+{{design_manifest}}
