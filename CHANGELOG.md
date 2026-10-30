@@ -11,8 +11,25 @@
   section and its manifest a `[design]` table (`theme`, the pinned `data-theme`, which a new app's
   `index.html` carries; `allow_hex`), and `scaffold check` warns when pages reference no design system, pin
   it to a branch, or hand-write hex colours outside `allow_hex`. Warnings for now, not failures. A profile
-  that names none changes nothing. The polarizetech profile pins `@polarizetech/polarize-ui` at `v0.6.5` (it
+  that names none changes nothing. The polarizetech profile pins `@polarizetech/polarize-ui` at `v0.6.7` (it
   was `v0.4.2`), with house rules pointing at its `README.md`, `CLAUDE.md`, `METHOD.md` and `shadcn/SHADCN.md`.
+
+- **A new app is wired to the design system, and says so.** The person's report (2026-10-30): new apps
+  weren't using the design system "properly. Or at all." Of the eight newest app folders in the
+  polarizetech repos, one used it fully; one had rewritten its page without the stylesheet and brought its
+  own palette. Causes found and fixed:
+  - `serve.py` served the design system's working tree, whatever branch was out, not the pin. It now reads
+    each file at the pinned tag (`git show <ref>:<file>`; `DESIGN_REF` overrides).
+  - The stylesheet's fonts (`fonts/*.woff2`) were outside the allow-list, so every app fell back to system
+    fonts. They are now served.
+  - A missing checkout meant a quietly unstyled page. The page now carries a banner with the fix
+    (`git clone …`, or `git fetch --tags` when the tag is missing).
+  - The app said nothing about it: its README now has a **Design** section (what the page links, how it is
+    served, tokens not literals), and `app.css` holds layout only.
+  - `scaffold check` asked only whether the repo as a whole referenced the design system, so one good page
+    hid the rest. It now warns about each HTML page that doesn't load it or lacks the `<body>` class.
+  - The `<body>` class comes from the profile's new `[design] body_class` instead of being hard-coded.
+  - The polarizetech profile moves to polarize-ui `v0.6.7`.
 
 ## v0.12.0 (2026-10-29)
 

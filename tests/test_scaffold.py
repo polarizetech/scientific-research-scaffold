@@ -1168,8 +1168,8 @@ jobs:
         ours = self.study("ours", profile="polarizetech")
         text = (ours / "AGENTS.md").read_text()
         self.assertIn("**Visual work uses the design system.**", text)
-        self.assertIn("pinned to `v0.6.5`", text)
-        self.assertIn("https://github.com/polarizetech/polarize-ui/blob/v0.6.5/README.md", text)
+        self.assertIn("pinned to `v0.6.7`", text)
+        self.assertIn("https://github.com/polarizetech/polarize-ui/blob/v0.6.7/README.md", text)
         self.assertIn("never hidden or shortened", text)  # the profile's house rules come with it
         self.assertLess(text.index("Visual work uses the design system"), text.index("## Agents and coordination"))
         self.assertNotIn("{{", text)
@@ -1231,8 +1231,90 @@ jobs:
         code, out = run("check", str(repo))
         self.assertNotIn("do not reference the design system", out)
         self.assertIn("pinned to a release tag, not a branch", out)
-        (app / "package.json").write_text('{"dependencies": {"@polarizetech/polarize-ui": "github:polarizetech/polarize-ui#v0.6.5"}}')
+        (app / "package.json").write_text('{"dependencies": {"@polarizetech/polarize-ui": "github:polarizetech/polarize-ui#v0.6.7"}}')
         self.assertNotIn("pinned to a release tag", run("check", str(repo))[1])
+
+    def test_design_check_looks_at_each_page(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
+        app = repo / "apps" / "explorer" / "v1"
+        (app / "own.html").write_text('<!doctype html><html><head><link rel="stylesheet" href="app.css"></head>'
+                                      "<body><main>x</main></body></html>")
+        (app / "plain.html").write_text('<html><head><link rel="stylesheet" href="design/design.css"></head>'
+                                        '<body class="wide"><p>x</p></body></html>')
+        (app / "vite.html").write_text('<html><body><div id="root"></div>'
+                                       '<script type="module" src="/src/main.tsx"></script></body></html>')
+        (app / "part.html").write_text("<p>a fragment, not a page</p>")
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)  # warnings, not failures
+        self.assertNotIn("do not reference the design system", out)  # the repo as a whole does
+        self.assertIn("pages that don't load polarize-ui", out)
+        self.assertIn("apps/explorer/v1/own.html", out)
+        self.assertIn('without class="ui" on <body>: apps/explorer/v1/plain.html', out)
+        for quiet in ("index.html", "vite.html", "part.html"):
+            self.assertNotIn(f"apps/explorer/v1/{quiet}", out)
+
+    def test_a_new_app_says_how_it_is_wired_to_the_design_system(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo), "--exploratory")[0], 0)
+        app = repo / "apps" / "explorer" / "v1"
+        readme = (app / "README.md").read_text()
+        self.assertTrue(readme.startswith("# explorer (v1)\n"), readme)
+        self.assertIn("**Scope:** exploratory", readme)
+        self.assertIn("## Design", readme)
+        self.assertIn("pinned to `v0.6.7`", readme)
+        self.assertIn('`design/design.css` and `design/design.js`, with `class="ui"` on `<body>`', readme)
+        self.assertIn("yellow banner", readme)
+        self.assertIn('<body class="ui">', (app / "index.html").read_text())
+        self.assertNotRegex((app / "app.css").read_text(), r"#[0-9a-fA-F]{3}|opacity")
+        plain = self.study("plain", profile="example")
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(plain))[0], 0)
+        self.assertNotIn("## Design", (plain / "apps" / "explorer" / "v1" / "README.md").read_text())
+        self.assertIn("<body>", (plain / "apps" / "explorer" / "v1" / "index.html").read_text())
+
+    def test_an_app_serves_the_design_system_at_its_pin(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
+        serve = repo / "apps" / "explorer" / "v1" / "serve.py"
+        ds = Path(self.tmp) / "ds"
+        (ds / "fonts").mkdir(parents=True)
+
+        def commit(css, tag=None):
+            (ds / "design.css").write_text(css)
+            subprocess.run(["git", "add", "-A"], cwd=ds, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", css], cwd=ds, check=True)
+            if tag:
+                subprocess.run(["git", "tag", tag], cwd=ds, check=True)
+
+        subprocess.run(["git", "init", "-q", str(ds)], check=True)
+        (ds / "fonts" / "inter.woff2").write_bytes(b"font")
+        commit("pinned", "v0.6.7")
+        commit("newer, on a branch")
+
+        def load(**env):
+            old = {k: os.environ.get(k) for k in env}
+            os.environ.update(env)
+            try:
+                return runpy.run_path(str(serve), run_name="x")
+            finally:
+                for k, v in old.items():
+                    os.environ.pop(k) if v is None else os.environ.__setitem__(k, v)
+
+        m = load(DESIGN_DIR=str(ds))
+        self.assertEqual(m["DESIGN_REF"], "v0.6.7")
+        self.assertEqual(m["design_file"]("design.css"), b"pinned")  # the tag, not the checkout
+        self.assertEqual(m["design_problem"](), "")
+        self.assertEqual(m["design_path"]("/design/fonts/inter.woff2"), "fonts/inter.woff2")
+        self.assertEqual(m["design_file"]("fonts/inter.woff2"), b"font")
+        for path in ("/design/fonts/../tokens.json", "/design/README.md", "/design/fonts/x.ttf"):
+            self.assertIsNone(m["design_path"](path), path)
+
+        m = load(DESIGN_DIR=str(ds), DESIGN_REF="v9.9.9")
+        self.assertIn("fetch --tags", m["design_problem"]())
+        m = load(DESIGN_DIR=str(ds / "missing"))
+        problem = m["design_problem"]()
+        self.assertIn("git clone https://github.com/polarizetech/polarize-ui", problem)
+        self.assertIn(b"body::before", m["banner"](problem))
 
     def test_design_check_is_silent_without_a_design_system_or_pages(self):
         plain = self.study("plain", profile="example")

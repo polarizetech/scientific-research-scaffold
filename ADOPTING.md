@@ -66,6 +66,7 @@ ref = "v2.1.0"                               # a release tag, never a branch
 rules = "https://github.com/our-org/our-ui/blob/v2.1.0/README.md"   # its own instructions, at that tag
 css = "our-ui.css"                           # the stylesheet a zero-build page links
 js = ""
+body_class = ""                              # the class a zero-build page puts on <body>, if it needs one
 house_rules = []                             # optional reminders, each naming the file that holds the rule
 ```
 

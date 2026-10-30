@@ -29,6 +29,13 @@ do not fail CI: list files that must keep hand-written colours under `allow_hex`
 person), and move other pages to the design system's tokens when they are next changed, not as a sweep. A
 `package.json` that pins the design system to a branch should move to a release tag.
 
+An app's `serve.py` belongs to the repo once written, so `scaffold update` leaves it alone. For an app that
+is being worked on, a session replaces its `serve.py` with a freshly scaffolded one (it serves the pinned
+tag, the stylesheet's fonts, and a banner when the design system can't be read), keeping the app's `PORT`,
+`SLUG` and `VERSION`, and adds the app README's **Design** section from a new app of the same profile. The
+check's new per-page warnings name the pages that don't load the design system; fix them when the page is
+next changed.
+
 ## v0.12.0
 
 **`scaffold update` does:** moves the CI ref to `v0.12.0`; refreshes the scaffold section of `AGENTS.md` from

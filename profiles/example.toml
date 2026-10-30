@@ -22,6 +22,7 @@ ref = ""                                     # the release tag it is pinned to, 
 rules = ""                                   # its own instructions, at that tag; they are the source of truth
 css = "design.css"                           # the stylesheet a zero-build page links
 js = ""                                      # its script, if it has one
+body_class = ""                              # the class a zero-build page puts on <body>, if it needs one
 house_rules = []                             # short reminders for assistants, each naming the file that holds the rule
 
 [workbench]                                  # shared tools not yet released; leave repo empty for none
