@@ -47,6 +47,18 @@ def add_kit_block(repo):
     path.write_text("<!-- kit_ap:start -->\n<!-- kit_ap:end -->\n\n" + old)
 
 
+class mock_profiles:
+    """Point the scaffold at another profiles folder for the length of a `with` block."""
+    def __init__(self, folder):
+        self.folder = folder
+
+    def __enter__(self):
+        self.saved, scaffold.PROFILES = scaffold.PROFILES, self.folder
+
+    def __exit__(self, *_):
+        scaffold.PROFILES = self.saved
+
+
 class Scaffold(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -1120,6 +1132,231 @@ jobs:
         self.assertIn("A model change is a new tag", (self.tmp / "memory" / "AGENTS.md").read_text())
         self.assertIn("No research here", (tool / "AGENTS.md").read_text())
 
+    # -------------------------------------------------------------------------------- design system
+
+    def test_design_setting_reads_the_same_in_both_parsers(self):
+        """Runs on every Python; test_mini_toml_matches_tomllib compares it with tomllib where there is one."""
+        p = ROOT / "profiles" / "polarizetech.toml"
+        ds = scaffold._mini_toml(p.read_text(encoding="utf-8"), p)["design"]
+        self.assertEqual((ds["package"], ds["repo"]), ("@polarizetech/polarize-ui", "polarizetech/polarize-ui"))
+        self.assertRegex(ds["ref"], r"^v\d+\.\d+\.\d+$")
+        self.assertIn(f"/blob/{ds['ref']}/", ds["rules"])
+        self.assertTrue(all("<body>" in r or "`" in r for r in ds["house_rules"]))
+        self.assertEqual(len(ds["house_rules"]), 4)
+        example = scaffold._mini_toml((ROOT / "profiles" / "example.toml").read_text(encoding="utf-8"), "example")
+        self.assertEqual(scaffold.design_system(example), {})  # an empty setting names nothing
+
+    def test_design_system_must_be_pinned_and_name_its_rules(self):
+        good = {"design": {"repo": "org/ui", "ref": "v1.2.3", "rules": "https://github.com/org/ui/blob/v1.2.3/README.md"}}
+        self.assertEqual(scaffold.design_problems(good), [])
+        self.assertEqual(scaffold.design_problems({}), [])
+        self.assertEqual(scaffold.design_problems({"design": {"repo": "", "ref": "main"}}), [])  # empty: nothing to check
+        for name in ("polarizetech", "example"):
+            self.assertEqual(scaffold.design_problems(scaffold.load_profile(name)), [], name)
+        branch = {"design": {**good["design"], "ref": "main"}}
+        self.assertIn("must be a release tag", " ".join(scaffold.design_problems(branch)))
+        no_rules = {"design": {"package": "@org/ui", "ref": "v1.2.3"}}
+        self.assertIn("no rules URL", " ".join(scaffold.design_problems(no_rules)))
+        drift = {"design": {**good["design"], "ref": "v1.2.4"}}
+        self.assertIn("not the pinned ref", " ".join(scaffold.design_problems(drift)))
+        (self.tmp / "bad.toml").write_text('name = "bad"\n[design]\nrepo = "org/ui"\nref = "main"\n')
+        with mock_profiles(self.tmp):
+            with self.assertRaises(scaffold.Fail):
+                scaffold.load_profile("bad")
+
+    def test_design_rule_and_section_only_when_the_profile_names_one(self):
+        ours = self.study("ours", profile="polarizetech")
+        text = (ours / "AGENTS.md").read_text()
+        self.assertIn("**Visual work uses the design system.**", text)
+        self.assertIn("pinned to `v0.6.7`", text)
+        self.assertIn("https://github.com/polarizetech/polarize-ui/blob/v0.6.7/README.md", text)
+        self.assertIn("never hidden or shortened", text)  # the profile's house rules come with it
+        self.assertLess(text.index("Visual work uses the design system"), text.index("## Agents and coordination"))
+        self.assertNotIn("{{", text)
+        self.assertIn("\n## Design\n", (ours / "README.md").read_text())
+        self.assertEqual(scaffold.load_toml(ours / "STUDY.toml")["design"], {"theme": "", "allow_hex": []})
+        code, out = run("new", "tool", "scope", "-j", "Shows a trace", "--claim", "--dir", str(self.tmp),
+                        "--profile", "polarizetech", "--visibility", "private", "--no-git")
+        self.assertEqual(code, 0, out)  # every kind gets it, not only studies
+        self.assertIn("Visual work uses the design system", (self.tmp / "scope" / "AGENTS.md").read_text())
+        self.assertIn("[design]", (self.tmp / "scope" / "TOOL.toml").read_text())
+
+        plain = self.study("plain", profile="example")  # a profile that names none: nothing changes
+        self.assertNotIn("Visual work uses the design system", (plain / "AGENTS.md").read_text())
+        self.assertNotIn("## Design", (plain / "README.md").read_text())
+        self.assertNotIn("design", scaffold.load_toml(plain / "STUDY.toml"))
+        self.assertEqual(run("check", str(plain))[0], 0)
+
+    def test_a_unit_inside_shares_the_design_section(self):
+        repo = self.study()
+        self.assertEqual(run("new", "sim", "model-a", "-q", "Sim", "--inside", str(repo))[0], 0)
+        self.assertNotIn("[design]", (repo / "sims" / "model-a" / "SIM.toml").read_text())
+        self.assertNotIn("## Design", (repo / "sims" / "model-a" / "README.md").read_text())
+
+    def test_a_new_app_pins_the_recorded_theme(self):
+        repo = self.study()
+        manifest = repo / "STUDY.toml"
+        manifest.write_text(manifest.read_text().replace('theme = ""', 'theme = "instrument"'))
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
+        self.assertIn('<html lang="en" data-theme="instrument">',
+                      (repo / "apps" / "explorer" / "v1" / "index.html").read_text())
+
+    def test_design_check_warns_about_pages_off_the_design_system(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
+        app = repo / "apps" / "explorer" / "v1"
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("design system", out)  # a new app references it and has no hex colours
+
+        html = (app / "index.html").read_text()
+        (app / "index.html").write_text(html.replace("</main>", '<a href="#add">x</a><svg><use href="#face"/></svg></main>'))
+        (app / "app.css").write_text("#bad { color: #c4643c; }\n/* #ffffff in a comment */\n.x { fill: var(--clay); }\n")
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)  # a warning, not a failure
+        self.assertIn("hand-written hex colours", out)
+        self.assertIn("app.css (1)", out)  # the selector, the comment and the links are not colours
+        self.assertNotIn("index.html (", out)
+
+        manifest = repo / "STUDY.toml"
+        manifest.write_text(manifest.read_text().replace("allow_hex = []", 'allow_hex = ["apps/*/v1/app.css"]'))
+        self.assertNotIn("hand-written hex colours", run("check", str(repo))[1])
+
+        (app / "index.html").write_text(html.replace('<link rel="stylesheet" href="design/design.css">', ""))
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertIn("do not reference the design system", out)
+
+        (app / "package.json").write_text('{"dependencies": {"@polarizetech/polarize-ui": "github:polarizetech/polarize-ui#main"}}')
+        code, out = run("check", str(repo))
+        self.assertNotIn("do not reference the design system", out)
+        self.assertIn("pinned to a release tag, not a branch", out)
+        (app / "package.json").write_text('{"dependencies": {"@polarizetech/polarize-ui": "github:polarizetech/polarize-ui#v0.6.7"}}')
+        self.assertNotIn("pinned to a release tag", run("check", str(repo))[1])
+
+    def test_design_check_looks_at_each_page(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
+        app = repo / "apps" / "explorer" / "v1"
+        (app / "own.html").write_text('<!doctype html><html><head><link rel="stylesheet" href="app.css"></head>'
+                                      "<body><main>x</main></body></html>")
+        (app / "plain.html").write_text('<html><head><link rel="stylesheet" href="design/design.css"></head>'
+                                        '<body class="wide"><p>x</p></body></html>')
+        (app / "vite.html").write_text('<html><body><div id="root"></div>'
+                                       '<script type="module" src="/src/main.tsx"></script></body></html>')
+        (app / "part.html").write_text("<p>a fragment, not a page</p>")
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)  # warnings, not failures
+        self.assertNotIn("do not reference the design system", out)  # the repo as a whole does
+        self.assertIn("pages that don't load polarize-ui", out)
+        self.assertIn("apps/explorer/v1/own.html", out)
+        self.assertIn('without class="ui" on <body>: apps/explorer/v1/plain.html', out)
+        for quiet in ("index.html", "vite.html", "part.html"):
+            self.assertNotIn(f"apps/explorer/v1/{quiet}", out)
+
+    def test_a_new_app_says_how_it_is_wired_to_the_design_system(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo), "--exploratory")[0], 0)
+        app = repo / "apps" / "explorer" / "v1"
+        readme = (app / "README.md").read_text()
+        self.assertTrue(readme.startswith("# explorer (v1)\n"), readme)
+        self.assertIn("**Scope:** exploratory", readme)
+        self.assertIn("## Design", readme)
+        self.assertIn("pinned to `v0.6.7`", readme)
+        self.assertIn('`design/design.css` and `design/design.js`, with `class="ui"` on `<body>`', readme)
+        self.assertIn("yellow banner", readme)
+        self.assertIn('<body class="ui">', (app / "index.html").read_text())
+        self.assertNotRegex((app / "app.css").read_text(), r"#[0-9a-fA-F]{3}|opacity")
+        plain = self.study("plain", profile="example")
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(plain))[0], 0)
+        self.assertNotIn("## Design", (plain / "apps" / "explorer" / "v1" / "README.md").read_text())
+        self.assertIn("<body>", (plain / "apps" / "explorer" / "v1" / "index.html").read_text())
+
+    def test_a_new_app_is_designed_first_and_carries_no_documentation(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo), "--exploratory")[0], 0)
+        app = repo / "apps" / "explorer" / "v1"
+        page = (app / "index.html").read_text()
+        self.assertIn('<ui-tier tier="EXPLORATORY"></ui-tier>', page)
+        body = page.split("<body", 1)[1]
+        self.assertNotIn("<p", body)
+        self.assertNotIn("Look?", body)
+        readme = (app / "README.md").read_text()
+        self.assertIn("`designer` agent", readme)
+        self.assertIn("https://claude.ai/artifact/9gWHMLHB5exoNc67MGayjG", readme)
+        self.assertIn("not documentation about it", readme)
+        agents = (repo / "AGENTS.md").read_text()
+        self.assertIn("**Design first, with the designer.**", agents)
+        self.assertIn("**No documentation on a page.**", agents)
+        self.assertNotIn("{{", agents)
+        plain = self.study("plain", profile="example")
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(plain))[0], 0)
+        self.assertIn('<small class="tier">EXPLORATORY</small>',
+                      (plain / "apps" / "explorer" / "v1" / "index.html").read_text())
+
+    def test_an_app_serves_the_design_system_at_its_pin(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)
+        serve = repo / "apps" / "explorer" / "v1" / "serve.py"
+        ds = Path(self.tmp) / "ds"
+        (ds / "fonts").mkdir(parents=True)
+
+        def commit(css, tag=None):
+            (ds / "design.css").write_text(css)
+            subprocess.run(["git", "add", "-A"], cwd=ds, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", css], cwd=ds, check=True)
+            if tag:
+                subprocess.run(["git", "tag", tag], cwd=ds, check=True)
+
+        subprocess.run(["git", "init", "-q", str(ds)], check=True)
+        (ds / "fonts" / "inter.woff2").write_bytes(b"font")
+        commit("pinned", "v0.6.7")
+        commit("newer, on a branch")
+
+        def load(**env):
+            old = {k: os.environ.get(k) for k in env}
+            os.environ.update(env)
+            try:
+                return runpy.run_path(str(serve), run_name="x")
+            finally:
+                for k, v in old.items():
+                    os.environ.pop(k) if v is None else os.environ.__setitem__(k, v)
+
+        m = load(DESIGN_DIR=str(ds))
+        self.assertEqual(m["DESIGN_REF"], "v0.6.7")
+        self.assertEqual(m["design_file"]("design.css"), b"pinned")  # the tag, not the checkout
+        self.assertEqual(m["design_problem"](), "")
+        self.assertEqual(m["design_path"]("/design/fonts/inter.woff2"), "fonts/inter.woff2")
+        self.assertEqual(m["design_file"]("fonts/inter.woff2"), b"font")
+        for path in ("/design/fonts/../tokens.json", "/design/README.md", "/design/fonts/x.ttf"):
+            self.assertIsNone(m["design_path"](path), path)
+
+        m = load(DESIGN_DIR=str(ds), DESIGN_REF="v9.9.9")
+        self.assertIn("fetch --tags", m["design_problem"]())
+        m = load(DESIGN_DIR=str(ds / "missing"))
+        problem = m["design_problem"]()
+        self.assertIn("git clone https://github.com/polarizetech/polarize-ui", problem)
+        self.assertIn(b"body::before", m["banner"](problem))
+
+    def test_design_check_is_silent_without_a_design_system_or_pages(self):
+        plain = self.study("plain", profile="example")
+        (plain / "page.html").write_text('<p style="color:#ff0000">x</p>')
+        code, out = run("check", str(plain))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("hex colours", out)
+        ours = self.study("ours", profile="polarizetech")  # no pages: nothing to check
+        self.assertNotIn("design system", run("check", str(ours))[1])
+
+    def test_hex_colours_are_values_not_references(self):
+        self.assertEqual(scaffold.hex_colours('a, #cafe { color: #fff; background: #11223344 }', ".css"),
+                         ["#fff", "#11223344"])
+        self.assertEqual(scaffold.hex_colours('<a href="#add">#123</a> <rect fill="#abc"/>', ".html"), ["#123", "#abc"])
+        self.assertEqual(scaffold.hex_colours('document.querySelector("#bead"); const c = "#c4643c"', ".tsx"),
+                         ["#c4643c"])
+        self.assertEqual(scaffold.hex_colours("&#123; url(#grad) #abcde", ".html"), [])
+        self.assertEqual(scaffold.hex_colours(".a { border: 1px solid var(--border, #ccc); color: #ddd }", ".css"),
+                         ["#ddd"])  # a token's fallback is not a hand-written colour
+
     def test_update_refreshes_only_the_scaffold_section(self):
         repo = self.study()
         agents_md = repo / "AGENTS.md"
@@ -1578,13 +1815,16 @@ jobs:
         except ImportError:
             self.skipTest("tomllib needs Python 3.11+")
         rendered = self.tmp / "rendered"
-        for kind in ("study", "sim", "tool"):
-            scaffold.render(scaffold.TEMPLATES / kind, rendered / kind,
-                            {**scaffold.template_vars({}, "x", "Does it?"), "job": "Does a job",
-                             "hypothesis_toml": scaffold.toml_str("Does it?"),
-                             "visibility": "private", "visibility_decided": "2026-01-01"})
+        # with no profile, and with one that names a design system (the manifests then carry [design])
+        for label, profile in (("none", {}), ("ours", scaffold.load_profile("polarizetech"))):
+            for kind in ("study", "sim", "tool", "workbench"):
+                scaffold.render(scaffold.TEMPLATES / kind, rendered / label / kind,
+                                {**scaffold.template_vars(profile, "x", "Does it?"), "job": "Does a job",
+                                 "hypothesis_toml": scaffold.toml_str("Does it?"),
+                                 "visibility": "private", "visibility_decided": "2026-01-01"})
+        self.assertIn("[design]", (rendered / "ours" / "study" / "STUDY.toml").read_text())
         for p in [*sorted((ROOT / "profiles").glob("*.toml")), ROOT / "tests" / "fixtures" / "multiline.toml",
-                  *sorted(rendered.glob("*/*.toml"))]:
+                  *sorted(rendered.glob("*/*/*.toml"))]:
             text = p.read_text(encoding="utf-8")
             self.assertEqual(scaffold._mini_toml(text, p), tomllib.loads(text), p.name)
 

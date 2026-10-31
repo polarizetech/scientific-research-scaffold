@@ -291,14 +291,51 @@ to research, a `scaffold new` command, and `check` rules. It is added to this se
   the whole study) passes `check` as it is: an entry with no `path` is looked for at `apps/<slug>/<version>/`
   and then at `apps/<version>-<slug>/`. Nothing has to move.
 - Each app is `index.html` + `app.js` + `app.css` + `serve.py`, with no build step unless it needs one.
-- `serve.py` serves the design system through an **allow-list** of named files, never a directory mount,
-  and the app must still work unstyled if the design system is absent.
+- `serve.py` serves the design system through an **allow-list** of named files and its stylesheet's fonts,
+  never a directory mount. It reads them from a local checkout at the pinned tag, whatever branch the
+  checkout has out. If they can't be read, the app still works, and its page carries a banner saying why
+  and how to fix it, so an unstyled page is never mistaken for the design.
 - Beyond localhost, an app is viewed at `$TAILNET_URL/<slug>/<version>/` when the profile names a tailnet gateway
   (`[serving] tailnet_url`). `serve.py` reads `TAILNET_URL` from the environment first, so the host is a
   setting and never a constant in the app; this is advice, not something `check` enforces.
 - An app that shows a number shows **how sure** the number is, in a label the design system never lets be
   hidden.
 - `scaffold new app <slug>` adds that app's next version (v1 for a new slug) and its manifest entry.
+
+### The design system
+
+A profile may name a design system under `[design]`: a `name`, its `package` (for build-based apps), its
+git `repo`, or both, the release tag it is pinned to (`ref`, never a branch), and `rules`, the URL of its own
+instructions at that tag. A profile that names none (no `repo` and no `package`) changes nothing below.
+When it names one:
+
+- every repo's `AGENTS.md` tells assistants that anything visual or user-facing (a web UI, a dashboard, a
+  chart, a figure or report page, slides) uses it, and that its own instructions are the source of truth.
+  They are linked, never copied. A profile's `house_rules` add short reminders, each naming the file that
+  holds the rule;
+- a new repo's README gets a **Design** section, and its manifest a `[design]` table: `theme`, the
+  `data-theme` its pages pin (a new app's `index.html` carries it), and `allow_hex`, the files allowed
+  hand-written hex colours;
+- a new app's `index.html` links the stylesheet (and script), with the profile's `body_class` on `<body>`,
+  and its own README gets a **Design** section saying what the page is wired to, so a session rewriting
+  the page keeps it;
+- a page is **designed before it is built**: the `designer` agent designs it on the design system (from the
+  profile's `artifact`, a published copy a design tool builds from, when it names one) and hands it to the
+  `frontend-developer`. A page carries **no documentation**: instructions, explanations and version notes
+  go in the app's README unless the person asks for them on the page, and the page says it is exploratory
+  with the profile's `exploratory_badge`, not a paragraph. Both are advice, not checks;
+- `scaffold check` **warns** when a repo with pages (HTML, CSS, TSX, JSX, Vue, Svelte) has none that
+  references the design system (by package, repo or stylesheet name), when a full HTML page doesn't load it
+  or lacks the profile's `body_class` (a page whose script is a bundler entry, `.ts`/`.tsx`/`.jsx`, loads it
+  from code and is skipped), when a `package.json` pins it to a
+  branch, or when a page hand-writes a hex colour outside `allow_hex` (a token's fallback, `var(--border,
+  #ccc)`, is not counted: it keeps a page usable unstyled). These are warnings, not failures, so
+  existing pages can move over when they are next changed. A `data-theme` and a project's tag differing
+  from the profile's are not checked: a repo moves its pin when it chooses.
+
+Everything else (tokens over literals, labels for how sure a number is, how a view of data is chosen,
+standard techniques and public or synthetic demo data in a public repo) is advice, which the design
+system's own instructions set out.
 
 ---
 
@@ -590,6 +627,7 @@ and saying plainly what was not done.
 | a unit whose `SCOPE.toml` says `stage = "exploratory"` says so in its README (or `CALCULATOR.md`), and has no preregistered experiments | ✓ | ✓ | ✓ | ✓ |
 | the corpus is not a submodule | ✓ | ✓ | | ✓ |
 | no absolute home-directory paths in tracked text files | warning | warning | warning | warning |
+| when the profile names a design system and the repo has pages: a page references it, each HTML page loads it (with `body_class`), a `package.json` pins it to a tag, and no page hand-writes a hex colour outside `[design] allow_hex` (§ 6) | warning | warning | | warning |
 
 A **workbench** is checked for: a valid manifest (no stage), the README kind line, decided visibility,
 `CLAUDE.md` and `AGENTS.md`, the prereg kit, private folders that exist and a private repo when any are

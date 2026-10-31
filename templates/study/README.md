@@ -31,3 +31,4 @@ make check
 | [`HYPOTHESIS.toml`](HYPOTHESIS.toml) | the person's hypothesis, decomposed into evidence-backed or falsifiable steps and integrations |
 | [`RESEARCH.md`](RESEARCH.md) | links each hypothesis element and experiment to the canonical corpus project |
 | `STUDY.toml` | the manifest: stage, visibility, corpus project, and every app, sim, dataset, calculator and tool |
+{{design_readme}}

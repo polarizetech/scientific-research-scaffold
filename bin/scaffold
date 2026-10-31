@@ -34,6 +34,7 @@ unless --visibility is given, and `check` fails until it is decided.
 import argparse
 import datetime as _dt
 import difflib
+import fnmatch
 import hashlib
 import json
 import os
@@ -309,7 +310,38 @@ def load_profile(name):
     if not p.exists():
         have = ", ".join(sorted(x.stem for x in PROFILES.glob("*.toml")))
         raise Fail(f"no profile {name!r} in {PROFILES} (have: {have})")
-    return load_toml(p)
+    profile = load_toml(p)
+    problems = design_problems(profile)
+    if problems:
+        raise Fail(f"profile {name!r}: " + "; ".join(problems))
+    return profile
+
+
+def design_system(profile):
+    """The profile's design system, or {} when it names none (no repo and no package). Optional: a profile
+    that leaves it empty gets no design rule, no Design section and no design check."""
+    ds = profile.get("design", {})
+    if not (ds.get("repo") or ds.get("package")):
+        return {}
+    return {**ds, "name": ds.get("name") or repo_basename(ds.get("repo", "")) or ds["package"],
+            "ref": str(ds.get("ref", ""))}
+
+
+def design_problems(profile):
+    """What is wrong with the profile's design system: it must be pinned to a tag and say where its rules are."""
+    ds = design_system(profile)
+    if not ds:
+        return []
+    out = []
+    if ds["ref"] in BRANCH_REFS or not re.search(r"\d", ds["ref"]):
+        out.append(f"[design] ref must be a release tag, not {ds['ref']!r}")
+    if not ds.get("rules"):
+        out.append("[design] names a design system but no rules URL (its own instructions)")
+    else:
+        at = re.search(r"/(?:blob|tree)/([^/]+)/", ds["rules"])
+        if at and at.group(1) != ds["ref"]:
+            out.append(f"[design] rules points at {at.group(1)!r}, not the pinned ref {ds['ref']!r}")
+    return out
 
 
 def profile_name(explicit=None, manifest=None):
@@ -355,6 +387,7 @@ def template_vars(profile, name, question, **extra):
         "design_name": repo_basename(ds.get("repo", "")),
         "design_css": ds.get("css", "design.css"),
         "design_js_tag": f'<script type="module" src="design/{ds["js"]}"></script>' if ds.get("js") else "",
+        **design_vars(profile),
         # Where apps are viewed beyond localhost (a tailnet gateway). An app's serve.py reads
         # TAILNET_URL first, so this is only the default it falls back to; empty means none.
         "tailnet_url": str(profile.get("serving", {}).get("tailnet_url", "")).rstrip("/"),
@@ -368,6 +401,88 @@ def template_vars(profile, name, question, **extra):
     }
     v.update(extra)
     return v
+
+
+def design_vars(profile):
+    """The design system's placeholders. Each is empty when the profile names none, so nothing changes."""
+    ds = design_system(profile)
+    v = {"design_label": "", "design_ref": "", "design_rules": "", "design_source": "", "design_house_rules": "",
+         "design_readme": "", "design_manifest": "", "design_theme_attr": "", "design_app_readme": "",
+         "design_body_attr": "", "design_first": "",
+         "design_exploratory": PLAIN_EXPLORATORY}
+    if not ds:
+        return v
+    ref, repo, pkg, rules = ds["ref"], ds.get("repo", ""), ds.get("package", ""), ds.get("rules", "")
+    label = f"[{ds['name']}](https://github.com/{repo}/tree/{ref})" if repo else f"`{ds['name']}`"
+    source = []
+    if pkg:
+        source.append(f"A build-based app depends on `{pkg}`" +
+                      (f" from `github:{repo}#{ref}`" if repo else f" at `{ref}`") + ".")
+    if repo:
+        source.append(f"A zero-build page links its stylesheet, `{ds.get('css', 'design.css')}`, from a checkout of "
+                      f"`{repo}` at `{ref}` (a submodule, or the sibling checkout an app's `serve.py` serves).")
+    house = ds.get("house_rules", [])
+    files = f" (files are in `{repo}` at `{ref}`)" if repo else ""
+    v.update({
+        "design_label": label,
+        "design_ref": ref,
+        "design_rules": rules,
+        "design_source": " ".join(source),
+        "design_house_rules": (f"  - From its instructions{files}:\n" + "".join(f"    - {r}\n" for r in house))
+                              if house else "",
+        "design_readme": (f"\n## Design\n\nAnything visual here (a web UI, dashboard, chart, figure or report page, "
+                          f"slides) uses {label}, pinned to `{ref}`. Its [instructions]({rules}) are the source "
+                          "of truth. The theme the pages pin (`data-theme`), if any, is `theme` under `[design]` in "
+                          "the manifest beside this README, and `allow_hex` lists the files allowed hand-written hex "
+                          "colours.\n"),
+        "design_body_attr": f' class="{ds["body_class"]}"' if ds.get("body_class") else "",
+        "design_app_readme": design_app_readme(ds, label, rules),
+        "design_first": design_first(ds, label),
+        "design_exploratory": ds.get("exploratory_badge") or PLAIN_EXPLORATORY,
+        "design_manifest": ("\n[design]                         # the design system's settings for this repo (README § Design)\n"
+                            'theme = ""                       # the data-theme pages pin; empty means its default\n'
+                            "allow_hex = []                   # files allowed hand-written hex colours (glob patterns)\n"),
+    })
+    return v
+
+
+NO_DOCS = ("The page shows the tool, not documentation about it: its controls, its data, and the labels the "
+           "design system requires (how sure a number is, units, n, scope). Instructions, explanations, version "
+           "notes and \"about this app\" text go in this README, not on the page, unless the person asks for "
+           "them there.")
+PLAIN_EXPLORATORY = '<small class="tier">EXPLORATORY</small>'
+
+
+def design_first(ds, label):
+    """How a page gets its look: the designer designs it on the design system before anyone builds it."""
+    art = ds.get("artifact", "")
+    where = (f"as a design made from the Design artifact type with the {ds['name']} design system "
+             f"([its artifact]({art})), using only its components and tokens") if art else \
+            f"as a zero-build mockup page on {label}, using only its components and tokens"
+    return (f"A new page, or a change to how one looks, is designed before it is built: hand it to the "
+            f"`designer` agent, which designs it {where}, then hands the design to `frontend-developer` "
+            "to build. Don't improvise a page's look while building it.")
+
+
+def design_app_readme(ds, label, rules):
+    """The Design section of an app's README: what the page is wired to, so a session editing it keeps that."""
+    css, js, cls, ref = ds.get("css", "design.css"), ds.get("js", ""), ds.get("body_class", ""), ds["ref"]
+    wired = [f"`design/{css}`"] + ([f"`design/{js}`"] if js else [])
+    keep = " and ".join(wired) + (f", with `class=\"{cls}\"` on `<body>`" if cls else "")
+    repo = ds.get("repo", "")
+    served = (f"`serve.py` serves those files from a checkout of `{repo}` at `{ref}`, whatever branch it has out. "
+              "A yellow banner across the page means it can't, and says how to fix it.") if repo else \
+             "Put the design system's files where `index.html` links them."
+    return (f"\n## Design\n\nThis page uses {label}, pinned to `{ref}`. Its [instructions]({rules}) are the source of "
+            "truth: read them before changing the page.\n\n"
+            f"- {design_first(ds, label)}\n"
+            f"- {NO_DOCS}\n"
+            f"- `index.html` links {keep}. Keep them if you rewrite the page.\n"
+            f"- {served}\n"
+            "- Colours, type, spacing and radii come from its tokens (`var(--...)`) and components. `app.css` holds "
+            "layout only.\n"
+            "- `scaffold check` warns about a page that doesn't load the design system and about hand-written hex "
+            "colours.\n")
 
 
 def agents_ref():
@@ -449,6 +564,14 @@ def retrieval_rule(profile):
             "kind of task, and the person can always name a role themselves.\n")
 
 
+def design_rule(variables, profile):
+    """The rule that sends visual work to the profile's design system, or nothing if it names none."""
+    if not design_system(profile):
+        return ""
+    return fill((AGENT_RULES / "design.md").read_text(encoding="utf-8"), variables,
+                "agent-rules/design.md").rstrip("\n") + "\n"
+
+
 def agents_block(kind, variables, profile):
     """The scaffold's section of AGENTS.md: the roles and the coordination rules, for every assistant."""
     roster = "\n".join(f"| `{a}` | {ROLE_SUMMARIES[a]} | `.claude/agents/{a}.md` |" for a in AGENTS[kind])
@@ -458,7 +581,8 @@ def agents_block(kind, variables, profile):
     body = fill((AGENTS_DIR / "templates" / "AGENTS.block.md").read_text(encoding="utf-8"), {
         **variables,
         "repo_rules": fill((AGENT_RULES / f"{kind}.md").read_text(encoding="utf-8"), variables,
-                           f"agent-rules/{kind}.md").rstrip("\n") + "\n" + retrieval_rule(profile),
+                           f"agent-rules/{kind}.md").rstrip("\n") + "\n" + design_rule(variables, profile)
+                         + retrieval_rule(profile),
         "agent_roster": "| role | takes | brief |\n|---|---|---|\n" + roster,
         "codex_routing": f"{models}. Use low reasoning effort for finding and summarising, medium by default, "
                          f"and a higher effort supported by the selected model when escalating.",
@@ -1048,6 +1172,8 @@ def cmd_new(a):
             inside, f"sims/{a.name}", a.hypothesis_element or [], a.question or "")
     v = template_vars(profile, a.name, a.question or a.job, visibility=a.visibility or UNDECIDED,
                       visibility_decided=_dt.date.today().isoformat() if a.visibility else "")
+    if inside:  # it shares the Design section and [design] settings of what it is inside
+        v.update(design_readme="", design_manifest="")
     v["hypothesis_toml"] = toml_str(a.hypothesis or "")
     v["job"] = v["question"]
     skip = ()
@@ -1151,7 +1277,9 @@ def new_app(a):
     hypothesis_link, hypothesis_scope = hypothesis_unit_block(
         study, dest.relative_to(study).as_posix(), a.hypothesis_element or [], a.question or "")
     port = str(8300 + (sum(map(ord, m.get("name", ""))) % 50) * 10 + len(apps) % 10)
+    theme = str(m.get("design", {}).get("theme", "")) if design_system(profile) else ""
     v = template_vars(profile, m.get("name", study.name), a.question, title=f"{a.name} ({version})",
+                      design_theme_attr=f' data-theme="{theme}"' if theme else "",
                       version=version, port=port, slug=a.name)
     render(TEMPLATES / "app", dest, v)
     (dest / "serve.py").chmod(0o755)
@@ -1164,6 +1292,9 @@ def new_app(a):
                 f"question = {toml_str(a.question)}\nstatus = \"active\"")
     register_hypothesis_unit(study, hypothesis_link)
     print(f"created app {dest}\n  run: python3 {dest.relative_to(study)}/serve.py")
+    if design_system(profile):
+        print("  design: the designer agent designs the page before it is built, with no documentation on it "
+              "(its README § Design)")
     tailnet = os.environ.get("TAILNET_URL", v["tailnet_url"]).rstrip("/")
     if tailnet:
         print(f"  tailnet: {tailnet}/{a.name}/{version}/ once the gateway lists it (TAILNET_URL overrides the host)")
@@ -1422,6 +1553,7 @@ def check_repo(root, rep, nested=False, profile_override=None):
         return
 
     check_exploratory(root, rep)
+    check_design(root, m, profile, rep)
     code, out, _ = git("ls-files", cwd=root)
     hits = []
     if not code:
@@ -1439,6 +1571,114 @@ def check_repo(root, rep, nested=False, profile_override=None):
                 continue
     rep.ok(not hits, f"{len(hits)} absolute home-directory path(s): " + ", ".join(hits[:5])
            + (" ..." if len(hits) > 5 else ""), warn=True)
+
+
+DESIGN_SUFFIXES = {".html", ".htm", ".css", ".scss", ".tsx", ".jsx", ".vue", ".svelte"}
+BUNDLER_ENTRY_RE = re.compile(r"<script\b[^>]*\bsrc\s*=\s*[\"'][^\"']+\.(?:tsx?|jsx)[\"']", re.I)
+DESIGN_SKIP = {"node_modules", "dist", "build", "vendor", "third_party", "third-party"}
+HEX_RE = re.compile(r"(?<![\w#&/.-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])")
+# What looks like a colour but is a reference to an element: links, ids, selectors in scripts.
+FRAGMENT_RE = re.compile(r"""(?:href|src|action|for|to|xlink:href|aria-[\w-]+|data-[\w-]+)\s*=\s*\{?\s*["'`]#[^"'`]*["'`]"""
+                         r"""|url\(\s*["']?#[^)]*\)"""
+                         # a token's fallback, for when the design system is absent (§ 6: apps still work unstyled)
+                         r"""|var\(\s*--[\w-]+\s*,\s*#[0-9a-fA-F]+\s*\)"""
+                         r"""|(?:querySelector(?:All)?|getElementById|closest|matches)\(\s*["'`][^"'`]*["'`]""")
+
+
+def repo_files(root):
+    """The repo's files: what git tracks, or, outside git, everything but build output and dependencies."""
+    code, out, _ = git("ls-files", "--cached", "--others", "--exclude-standard", cwd=root)
+    rels = out.splitlines() if not code else [p.relative_to(root).as_posix() for p in root.rglob("*")]
+    return [r for r in rels if not DESIGN_SKIP.intersection(Path(r).parts) and (root / r).is_file()
+            and not any(part.startswith(".") for part in Path(r).parts[:-1])]  # hidden folders: tool caches
+
+
+def hex_colours(text, suffix):
+    """Hand-written hex colours in one file's text, leaving out comments, references to elements, and a
+    token's fallback (`var(--border, #ccc)`), which still takes the token when the design system is there."""
+    text = re.sub(r"/\*.*?\*/|<!--.*?-->", " ", text, flags=re.S)
+    text = FRAGMENT_RE.sub(" ", text)
+    if suffix in (".css", ".scss"):  # declaration values only: `#id` in a selector is not a colour
+        text = " ".join(re.findall(r":([^;{}]*)", text))
+    return HEX_RE.findall(text)
+
+
+def check_design(root, m, profile, rep):
+    """When the profile names a design system and the repo has pages (HTML, CSS, TSX and the like), warn if
+    nothing references it, if a package pin is a branch, or if a page hand-writes a hex colour outside the
+    files its manifests allow. Warnings, not failures: existing pages migrate when they are next changed."""
+    ds = design_system(profile)
+    if not ds:
+        return
+    files = repo_files(root)
+    pages = [r for r in files if Path(r).suffix in DESIGN_SUFFIXES]
+    if not pages:
+        return
+    allow = []
+    for rel in files:  # each manifest's allow_hex is relative to its own folder
+        if Path(rel).name in {f"{k.upper()}.toml" for k in KINDS}:
+            try:
+                listed = load_toml(root / rel).get("design", {}).get("allow_hex", [])
+            except Exception:  # noqa: BLE001 - a manifest that does not parse is reported elsewhere
+                listed = []
+            base = Path(rel).parent.as_posix()
+            allow += [g if base == "." else f"{base}/{g}" for g in listed]
+    names = [n for n in (ds.get("package"), ds.get("repo"), ds.get("css")) if n]
+    refs, pins = [], []
+    for rel in [*pages, *(r for r in files if Path(r).name in ("package.json", ".gitmodules") or
+                          Path(r).suffix in (".js", ".mjs", ".ts"))]:
+        try:
+            text = (root / rel).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if any(n in text for n in names):
+            refs.append(rel)
+        if Path(rel).name == "package.json" and ds.get("package"):
+            try:
+                deps = {**json.loads(text).get("dependencies", {}), **json.loads(text).get("devDependencies", {})}
+            except (ValueError, AttributeError):
+                deps = {}
+            spec = str(deps.get(ds["package"], ""))
+            ref = spec.rpartition("#")[2] if "#" in spec else ""
+            if spec and (spec.startswith(("github:", "git+", "git:", "https://")) or "/" in spec) and \
+                    (ref in BRANCH_REFS or not re.search(r"\d", ref)):
+                pins.append(f"{rel} ({spec})")
+    rep.ok(bool(refs), f"pages here ({', '.join(pages[:3])}{' ...' if len(pages) > 3 else ''}) do not reference the "
+           f"design system, {ds['name']} at {ds['ref']} (README § Design)", warn=True)
+    rep.ok(not pins, f"the design system must be pinned to a release tag, not a branch: {', '.join(pins)}", warn=True)
+    off, bare = [], []
+    for rel in pages:  # each full HTML document loads it, unless a bundler entry script does that
+        if Path(rel).suffix not in (".html", ".htm"):
+            continue
+        try:
+            text = (root / rel).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        body = re.search(r"<body\b[^>]*>", text, re.I)
+        if not body or BUNDLER_ENTRY_RE.search(text):
+            continue
+        if not any(n in text for n in names):
+            off.append(rel)
+        elif ds.get("body_class") and ds["body_class"] not in re.findall(
+                r"[\w-]+", (re.search(r"class\s*=\s*[\"']([^\"']*)", body.group(0)) or [None, ""])[1]):
+            bare.append(rel)
+    rep.ok(not off, f"pages that don't load {ds['name']} (link its {ds.get('css', 'stylesheet')}, as the app "
+           f"template does): " + ", ".join(off[:5]) + (" ..." if len(off) > 5 else ""), warn=True)
+    rep.ok(not bare, f"pages that load {ds['name']} without class=\"{ds.get('body_class')}\" on <body>: "
+           + ", ".join(bare[:5]) + (" ..." if len(bare) > 5 else ""), warn=True)
+    hits = []
+    for rel in pages:
+        if any(fnmatch.fnmatch(rel, g) for g in allow) or Path(rel).name == ds.get("css"):
+            continue
+        try:
+            found = hex_colours((root / rel).read_text(encoding="utf-8"), Path(rel).suffix)
+        except (UnicodeDecodeError, OSError):
+            continue
+        if found:
+            hits.append(f"{rel} ({len(found)})")
+    rep.ok(not hits, f"hand-written hex colours: take them from {ds['name']}'s tokens, or list the file under "
+           f"[design] allow_hex in the manifest: " + ", ".join(hits[:5]) + (" ..." if len(hits) > 5 else ""),
+           warn=True)
 
 
 def valid_research_revision(value):
@@ -2171,7 +2411,7 @@ def cmd_profiles(_a):
     for p in sorted(PROFILES.glob("*.toml")):
         prof = load_toml(p)
         print(f"{p.stem:16} corpus={prof.get('corpus', {}).get('repo', '-')}  "
-              f"design={prof.get('design', {}).get('repo') or '-'}  workbench={prof.get('workbench', {}).get('repo') or '-'}")
+              f"design={'@'.join(filter(None, (design_system(prof).get('name'), design_system(prof).get('ref')))) or '-'}  workbench={prof.get('workbench', {}).get('repo') or '-'}")
 
 
 # ---------------------------------------------------------------------------- status, update

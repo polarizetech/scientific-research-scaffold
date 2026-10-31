@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+- **Visual work uses the profile's design system.** The person's requirement (2026-10-30): scaffolded
+  projects use the polarize-ui design system whenever they build a visual or user-facing experience. The
+  setting is generic: a profile's `[design]` table now takes `name`, `package`, `repo`, `ref` (a release tag),
+  `rules` (the URL of its own instructions at that tag) and optional `house_rules`; `scaffold` refuses a
+  profile whose `ref` is a branch or whose `rules` names another tag. When a profile names one, every repo's
+  `AGENTS.md` gets `agent-rules/design.md` (and the house rules), a new repo's README gets a **Design**
+  section and its manifest a `[design]` table (`theme`, the pinned `data-theme`, which a new app's
+  `index.html` carries; `allow_hex`), and `scaffold check` warns when pages reference no design system, pin
+  it to a branch, or hand-write hex colours outside `allow_hex`. Warnings for now, not failures. A profile
+  that names none changes nothing. The polarizetech profile pins `@polarizetech/polarize-ui` at `v0.6.7` (it
+  was `v0.4.2`), with house rules pointing at its `README.md`, `CLAUDE.md`, `METHOD.md` and `shadcn/SHADCN.md`.
+
+- **A new app is wired to the design system, and says so.** The person's report (2026-10-30): new apps
+  weren't using the design system "properly. Or at all." Of the eight newest app folders in the
+  polarizetech repos, one used it fully; one had rewritten its page without the stylesheet and brought its
+  own palette. Causes found and fixed:
+  - `serve.py` served the design system's working tree, whatever branch was out, not the pin. It now reads
+    each file at the pinned tag (`git show <ref>:<file>`; `DESIGN_REF` overrides).
+  - The stylesheet's fonts (`fonts/*.woff2`) were outside the allow-list, so every app fell back to system
+    fonts. They are now served.
+  - A missing checkout meant a quietly unstyled page. The page now carries a banner with the fix
+    (`git clone …`, or `git fetch --tags` when the tag is missing).
+  - The app said nothing about it: its README now has a **Design** section (what the page links, how it is
+    served, tokens not literals), and `app.css` holds layout only.
+  - `scaffold check` asked only whether the repo as a whole referenced the design system, so one good page
+    hid the rest. It now warns about each HTML page that doesn't load it or lacks the `<body>` class.
+
+- **Pages are designed first, and carry no documentation.** The person's report (2026-10-31): new apps
+  "have been looking terrible", with documentation on the page. The scaffold installed the `designer` agent
+  but never told a session to use it, and the app template put the question and a paragraph of caveats on
+  the page. Now:
+  - the design rule in `AGENTS.md` and each app's README § Design say a page is designed before it is
+    built: the `designer` agent designs it (with the Design artifact type and the design system's artifact,
+    when the profile names one under `[design] artifact`) and hands it to the `frontend-developer`;
+  - they say a page shows the tool, not documentation about it: instructions, explanations and version
+    notes go in the README unless the person asks for them on the page;
+  - a new app's page has its title and an exploratory badge (`[design] exploratory_badge`; the polarizetech
+    profile uses `<ui-tier tier="EXPLORATORY">`), and nothing else; the question stays in its README;
+  - `scaffold new app` says so when it creates the app.
+  - The `<body>` class comes from the profile's new `[design] body_class` instead of being hard-coded.
+  - The polarizetech profile moves to polarize-ui `v0.6.7`.
+
 ## v0.12.0 (2026-10-29)
 
 - Generated CI checks out `v0.12.0`; the `agents` submodule is scientific-research-agents v0.10.0.
