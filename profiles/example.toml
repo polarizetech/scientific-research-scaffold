@@ -23,6 +23,8 @@ rules = ""                                   # its own instructions, at that tag
 css = "design.css"                           # the stylesheet a zero-build page links
 js = ""                                      # its script, if it has one
 body_class = ""                              # the class a zero-build page puts on <body>, if it needs one
+artifact = ""                                # a published copy a design tool builds from (a design-system artifact), if any
+exploratory_badge = ""                       # the markup a page uses to say it is exploratory; empty gives a plain label
 house_rules = []                             # short reminders for assistants, each naming the file that holds the rule
 
 [workbench]                                  # shared tools not yet released; leave repo empty for none

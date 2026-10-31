@@ -22,6 +22,10 @@ rules = "https://github.com/polarizetech/polarize-ui/blob/v0.6.7/README.md"
 css = "design.css"
 js = "design.js"
 body_class = "ui"
+# The Polarize UI design-system artifact (polarize-ui `claude-design-system/`): new pages are designed from it first.
+artifact = "https://claude.ai/artifact/9gWHMLHB5exoNc67MGayjG"
+# How a page shows that it is exploratory: a tier badge, not a paragraph.
+exploratory_badge = '<ui-tier tier="EXPLORATORY"></ui-tier>'
 # Reminders for assistants, each pointing at the file in polarize-ui (at `ref`) that holds the rule.
 house_rules = [
   "A zero-build page links `design.css` and `design.js` and puts the `ui` class on `<body>`; a build-based app uses the shadcn bridge and the React components (`README.md` § Using it, `shadcn/SHADCN.md`). Never load `design.css` and the shadcn `theme.css` in the same document: both define `--accent`, and the loser is silent.",

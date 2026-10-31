@@ -2,6 +2,10 @@
   chart, a figure or report page, slides) uses {{design_label}}, pinned to `{{design_ref}}`. Its own
   [instructions]({{design_rules}}) are the source of truth: read them before building, follow them over any
   summary here, and link to them rather than copying them into this repo. {{design_source}}
+  - **Design first, with the designer.** {{design_first}}
+  - **No documentation on a page.** A page shows the tool: its controls, its data, and the labels the design
+    system requires (how sure a number is, units, n, scope). Instructions, explanations, version notes and
+    "about this" text go in the README, not on the page, unless the person asks for them there.
   - Colours, type, spacing and radii come from its tokens, never literals. Don't edit its generated files; a
     change to the look is made upstream, in its token source, and arrives here with a new tag.
   - In anything that could be pushed to a public repo, use only standard visualisation techniques, and demo

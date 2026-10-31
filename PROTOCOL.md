@@ -319,6 +319,11 @@ When it names one:
 - a new app's `index.html` links the stylesheet (and script), with the profile's `body_class` on `<body>`,
   and its own README gets a **Design** section saying what the page is wired to, so a session rewriting
   the page keeps it;
+- a page is **designed before it is built**: the `designer` agent designs it on the design system (from the
+  profile's `artifact`, a published copy a design tool builds from, when it names one) and hands it to the
+  `frontend-developer`. A page carries **no documentation**: instructions, explanations and version notes
+  go in the app's README unless the person asks for them on the page, and the page says it is exploratory
+  with the profile's `exploratory_badge`, not a paragraph. Both are advice, not checks;
 - `scaffold check` **warns** when a repo with pages (HTML, CSS, TSX, JSX, Vue, Svelte) has none that
   references the design system (by package, repo or stylesheet name), when a full HTML page doesn't load it
   or lacks the profile's `body_class` (a page whose script is a bundler entry, `.ts`/`.tsx`/`.jsx`, loads it

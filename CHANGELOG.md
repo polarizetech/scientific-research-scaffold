@@ -28,6 +28,19 @@
     served, tokens not literals), and `app.css` holds layout only.
   - `scaffold check` asked only whether the repo as a whole referenced the design system, so one good page
     hid the rest. It now warns about each HTML page that doesn't load it or lacks the `<body>` class.
+
+- **Pages are designed first, and carry no documentation.** The person's report (2026-10-31): new apps
+  "have been looking terrible", with documentation on the page. The scaffold installed the `designer` agent
+  but never told a session to use it, and the app template put the question and a paragraph of caveats on
+  the page. Now:
+  - the design rule in `AGENTS.md` and each app's README § Design say a page is designed before it is
+    built: the `designer` agent designs it (with the Design artifact type and the design system's artifact,
+    when the profile names one under `[design] artifact`) and hands it to the `frontend-developer`;
+  - they say a page shows the tool, not documentation about it: instructions, explanations and version
+    notes go in the README unless the person asks for them on the page;
+  - a new app's page has its title and an exploratory badge (`[design] exploratory_badge`; the polarizetech
+    profile uses `<ui-tier tier="EXPLORATORY">`), and nothing else; the question stays in its README;
+  - `scaffold new app` says so when it creates the app.
   - The `<body>` class comes from the profile's new `[design] body_class` instead of being hard-coded.
   - The polarizetech profile moves to polarize-ui `v0.6.7`.
 
