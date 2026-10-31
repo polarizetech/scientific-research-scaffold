@@ -36,6 +36,12 @@ tag, the stylesheet's fonts, and a banner when the design system can't be read),
 check's new per-page warnings name the pages that don't load the design system; fix them when the page is
 next changed.
 
+`scaffold update` also brings the design rule's two new points into `AGENTS.md`: design a page with the
+`designer` agent before building it, and keep documentation off the page. For an app that is being worked
+on, a session adds the same two points to its README § Design, and moves any explanatory text on its page
+(the question, the "Nothing shown here is a finding" paragraph, instructions) into the README, leaving the
+exploratory badge. Leave other apps as they are.
+
 ## v0.12.0
 
 **`scaffold update` does:** moves the CI ref to `v0.12.0`; refreshes the scaffold section of `AGENTS.md` from

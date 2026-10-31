@@ -1272,6 +1272,28 @@ jobs:
         self.assertNotIn("## Design", (plain / "apps" / "explorer" / "v1" / "README.md").read_text())
         self.assertIn("<body>", (plain / "apps" / "explorer" / "v1" / "index.html").read_text())
 
+    def test_a_new_app_is_designed_first_and_carries_no_documentation(self):
+        repo = self.study()
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo), "--exploratory")[0], 0)
+        app = repo / "apps" / "explorer" / "v1"
+        page = (app / "index.html").read_text()
+        self.assertIn('<ui-tier tier="EXPLORATORY"></ui-tier>', page)
+        body = page.split("<body", 1)[1]
+        self.assertNotIn("<p", body)
+        self.assertNotIn("Look?", body)
+        readme = (app / "README.md").read_text()
+        self.assertIn("`designer` agent", readme)
+        self.assertIn("https://claude.ai/artifact/9gWHMLHB5exoNc67MGayjG", readme)
+        self.assertIn("not documentation about it", readme)
+        agents = (repo / "AGENTS.md").read_text()
+        self.assertIn("**Design first, with the designer.**", agents)
+        self.assertIn("**No documentation on a page.**", agents)
+        self.assertNotIn("{{", agents)
+        plain = self.study("plain", profile="example")
+        self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(plain))[0], 0)
+        self.assertIn('<small class="tier">EXPLORATORY</small>',
+                      (plain / "apps" / "explorer" / "v1" / "index.html").read_text())
+
     def test_an_app_serves_the_design_system_at_its_pin(self):
         repo = self.study()
         self.assertEqual(run("new", "app", "explorer", "-q", "Look?", "--study", str(repo))[0], 0)

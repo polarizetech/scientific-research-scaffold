@@ -67,6 +67,8 @@ rules = "https://github.com/our-org/our-ui/blob/v2.1.0/README.md"   # its own in
 css = "our-ui.css"                           # the stylesheet a zero-build page links
 js = ""
 body_class = ""                              # the class a zero-build page puts on <body>, if it needs one
+artifact = ""                                # a published copy a design tool builds from (a design-system artifact), if any
+exploratory_badge = ""                       # the markup a page uses to say it is exploratory; empty gives a plain label
 house_rules = []                             # optional reminders, each naming the file that holds the rule
 ```
 

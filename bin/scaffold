@@ -408,7 +408,8 @@ def design_vars(profile):
     ds = design_system(profile)
     v = {"design_label": "", "design_ref": "", "design_rules": "", "design_source": "", "design_house_rules": "",
          "design_readme": "", "design_manifest": "", "design_theme_attr": "", "design_app_readme": "",
-         "design_body_attr": ""}
+         "design_body_attr": "", "design_first": "",
+         "design_exploratory": PLAIN_EXPLORATORY}
     if not ds:
         return v
     ref, repo, pkg, rules = ds["ref"], ds.get("repo", ""), ds.get("package", ""), ds.get("rules", "")
@@ -436,11 +437,31 @@ def design_vars(profile):
                           "colours.\n"),
         "design_body_attr": f' class="{ds["body_class"]}"' if ds.get("body_class") else "",
         "design_app_readme": design_app_readme(ds, label, rules),
+        "design_first": design_first(ds, label),
+        "design_exploratory": ds.get("exploratory_badge") or PLAIN_EXPLORATORY,
         "design_manifest": ("\n[design]                         # the design system's settings for this repo (README § Design)\n"
                             'theme = ""                       # the data-theme pages pin; empty means its default\n'
                             "allow_hex = []                   # files allowed hand-written hex colours (glob patterns)\n"),
     })
     return v
+
+
+NO_DOCS = ("The page shows the tool, not documentation about it: its controls, its data, and the labels the "
+           "design system requires (how sure a number is, units, n, scope). Instructions, explanations, version "
+           "notes and \"about this app\" text go in this README, not on the page, unless the person asks for "
+           "them there.")
+PLAIN_EXPLORATORY = '<small class="tier">EXPLORATORY</small>'
+
+
+def design_first(ds, label):
+    """How a page gets its look: the designer designs it on the design system before anyone builds it."""
+    art = ds.get("artifact", "")
+    where = (f"as a design made from the Design artifact type with the {ds['name']} design system "
+             f"([its artifact]({art})), using only its components and tokens") if art else \
+            f"as a zero-build mockup page on {label}, using only its components and tokens"
+    return (f"A new page, or a change to how one looks, is designed before it is built: hand it to the "
+            f"`designer` agent, which designs it {where}, then hands the design to `frontend-developer` "
+            "to build. Don't improvise a page's look while building it.")
 
 
 def design_app_readme(ds, label, rules):
@@ -454,6 +475,8 @@ def design_app_readme(ds, label, rules):
              "Put the design system's files where `index.html` links them."
     return (f"\n## Design\n\nThis page uses {label}, pinned to `{ref}`. Its [instructions]({rules}) are the source of "
             "truth: read them before changing the page.\n\n"
+            f"- {design_first(ds, label)}\n"
+            f"- {NO_DOCS}\n"
             f"- `index.html` links {keep}. Keep them if you rewrite the page.\n"
             f"- {served}\n"
             "- Colours, type, spacing and radii come from its tokens (`var(--...)`) and components. `app.css` holds "
@@ -1269,6 +1292,9 @@ def new_app(a):
                 f"question = {toml_str(a.question)}\nstatus = \"active\"")
     register_hypothesis_unit(study, hypothesis_link)
     print(f"created app {dest}\n  run: python3 {dest.relative_to(study)}/serve.py")
+    if design_system(profile):
+        print("  design: the designer agent designs the page before it is built, with no documentation on it "
+              "(its README § Design)")
     tailnet = os.environ.get("TAILNET_URL", v["tailnet_url"]).rstrip("/")
     if tailnet:
         print(f"  tailnet: {tailnet}/{a.name}/{version}/ once the gateway lists it (TAILNET_URL overrides the host)")
