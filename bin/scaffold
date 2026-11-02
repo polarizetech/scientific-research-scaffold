@@ -1758,7 +1758,7 @@ def check_exploratory(root, rep):
     code, out, _ = git("ls-files", "--cached", "--others", "--exclude-standard", "--", "SCOPE.toml", "*/SCOPE.toml",
                        cwd=root)
     found = out.splitlines() if not code else [p.relative_to(root).as_posix() for p in root.rglob("SCOPE.toml")
-                                               if ".git" not in p.parts and ".agents" not in p.parts]
+                                               if not {".git", ".agents", ".scaffold"} & set(p.parts)]
     for rel in sorted(found):
         if rel.startswith(".agents/"):
             continue
@@ -1821,7 +1821,8 @@ def check_comparisons(root, m, units, rep):
         rep.ok(unit in listed, f"{unit} is not listed under [[comparisons]] in TOOL.toml")
     for path in listed:
         rep.ok((root / path).is_dir(), f"TOOL.toml lists comparison {path!r}, which does not exist")
-    skip = {".git", ".agents", "node_modules", ".venv", "venv", "__pycache__"}
+    # .scaffold is the scaffold's own checkout in CI (the workflow it writes): its templates are not units.
+    skip = {".git", ".agents", ".scaffold", "node_modules", ".venv", "venv", "__pycache__"}
     for dirpath, dirnames, _ in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in skip]
         if "preregistrations" in dirnames:
