@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`scaffold check` skips the scaffold's own CI checkout.** Generated CI checks the scaffold out into `.scaffold/` inside the repo, and a tool repo's check walked into it and failed on the templates' `preregistrations/` folders (first seen on polarizetech/entropy-fetch's first CI run). The tree walks now skip `.scaffold`.
+
 ## v0.12.0 (2026-10-29)
 
 - Generated CI checks out `v0.12.0`; the `agents` submodule is scientific-research-agents v0.10.0.

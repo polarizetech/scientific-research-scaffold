@@ -440,6 +440,15 @@ class Scaffold(unittest.TestCase):
         code, out = run("check", str(repo))
         self.assertEqual(code, 0, out)
 
+    def test_tool_check_skips_the_scaffold_checkout(self):
+        """CI checks the scaffold out into .scaffold/; its templates hold preregistrations/ but are not units."""
+        repo = self.tool()
+        for t in ("templates/sim/preregistrations", "templates/units/dataset/preregistrations"):
+            (repo / ".scaffold" / t).mkdir(parents=True)
+        code, out = run("check", str(repo))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(".scaffold", out)
+
     def test_scoped_tool_warns_until_it_has_a_scope_record(self):
         repo = self.tool()
         (repo / ".agents" / "protocols").mkdir(parents=True, exist_ok=True)
