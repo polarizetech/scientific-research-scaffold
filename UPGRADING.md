@@ -16,6 +16,12 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.12.1
+
+**`scaffold update` does:** moves the CI ref to `v0.12.1`.
+
+**A session does:** nothing is required. `scaffold check` now skips the scaffold's own `.scaffold/` CI checkout. A repo that added a CI step moving `.scaffold` out of the repo before the check (polarize-particle and polarize-neuron did) may keep it or remove it.
+
 ## v0.12.0
 
 **`scaffold update` does:** moves the CI ref to `v0.12.0`; refreshes the scaffold section of `AGENTS.md` from
