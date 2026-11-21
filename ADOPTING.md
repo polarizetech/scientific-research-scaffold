@@ -52,6 +52,33 @@ about both, as the old layout, and nothing more. New preregistrations go in the 
 (`<unit>/preregistrations/<EID>/`); new datasets get `scaffold new dataset`. Move an old experiment only when
 it is worth doing, one commit per move, and keep it listed in `EXPERIMENTS.md` either way.
 
+### A design system
+
+The protocol does not choose a look. An organisation that has a design system names it in its profile;
+one that has none leaves `[design]` empty and nothing changes:
+
+```toml
+[design]
+name = "our-ui"
+package = "@our-org/our-ui"                  # for build-based apps; leave empty if there is no package
+repo = "our-org/our-ui"                      # its git source
+ref = "v2.1.0"                               # a release tag, never a branch
+rules = "https://github.com/our-org/our-ui/blob/v2.1.0/README.md"   # its own instructions, at that tag
+css = "our-ui.css"                           # the stylesheet a zero-build page links
+js = ""
+body_class = ""                              # the class a zero-build page puts on <body>, if it needs one
+artifact = ""                                # a published copy a design tool builds from (a design-system artifact), if any
+exploratory_badge = ""                       # the markup a page uses to say it is exploratory; empty gives a plain label
+house_rules = []                             # optional reminders, each naming the file that holds the rule
+```
+
+`scaffold` refuses a profile whose `ref` is a branch, or whose `rules` URL names a different tag. Keep the
+design system's rules in the design system: `house_rules` point at them, and never restate them in full.
+New repos then get the agent rule, a README **Design** section and a `[design]` table in the manifest. In
+an existing repo, add the README section and the `[design]` table by hand (`theme = ""`, `allow_hex = []`),
+then read `scaffold check`'s design warnings: list a file that has to keep its colours (a vendored chart
+library, an exported figure) under `allow_hex`, and move the rest to tokens when the page is next changed.
+
 ## 2. Earlier preregistrations stay frozen
 
 A repo that froze analyses under an earlier system (hash files, freeze scripts, a `PREREGISTRATION.md` at the

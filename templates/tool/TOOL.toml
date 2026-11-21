@@ -8,7 +8,7 @@ profile = "{{profile}}"
 # The one version. pyproject.toml, CITATION.cff and CHANGELOG.md say the same, and `scaffold check`
 # fails when they differ. An undated CHANGELOG heading means that version is in preparation.
 version = "0.1.0"
-# A tool holds no research: no question, no [corpus], no root preregistrations. Its comparison units
+{{design_manifest}}# A tool holds no research: no question, no [corpus], no root preregistrations. Its comparison units
 # (sims/ and datasets/ comparing it with other tools, bench sims among them: tests against reference
 # implementations in other repos, pinned by tag) are listed below as [[comparisons]].
 

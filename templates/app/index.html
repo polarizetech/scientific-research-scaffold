@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en"{{design_theme_attr}}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,11 +8,9 @@
   {{design_js_tag}}
   <link rel="stylesheet" href="app.css">
 </head>
-<body class="ui">
+<body{{design_body_attr}}>
   <main>
-    <h1>{{title}}</h1>
-    <p class="question">{{question}}</p>
-    <p class="note">Exploratory ({{version}}). Nothing shown here is a finding; findings come from preregistered sims, datasets and calculators.</p>
+    <h1>{{title}} {{design_exploratory}}</h1>
     <div id="app"></div>
   </main>
   <script type="module" src="app.js"></script>

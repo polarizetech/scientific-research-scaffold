@@ -15,3 +15,4 @@ implementations pinned by tag.
 |---|---|
 | `TOOL.toml` | the manifest: job, stage, version, and the consumers that depend on it |
 | `CHANGELOG.md` | every release, and under `### Outputs changed`, anything a consumer relies on |
+{{design_readme}}

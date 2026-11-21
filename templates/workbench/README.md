@@ -17,3 +17,4 @@ where work starts, and where most of it stays. It holds what is general, and the
 
 A study leaves for its own repo when someone outside must see it without the rest, when it must stay
 reproducible after the workbench moves on, or when it needs its own releases.
+{{design_readme}}

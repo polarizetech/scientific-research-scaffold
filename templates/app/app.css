@@ -1,2 +1,3 @@
+/* Layout only. Colours, type, spacing and radii come from the design system's tokens (var(--...)) and its
+   components; see README.md § Design. */
 main { max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
-.note { opacity: 0.75; font-size: 0.9em; }
