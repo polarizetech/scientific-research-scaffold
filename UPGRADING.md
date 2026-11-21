@@ -16,9 +16,9 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
-## Unreleased
+## v0.13.0
 
-**`scaffold update` does:** when the repo's profile names a design system, adds the design rule (and the
+**`scaffold update` does:** moves the CI ref to `v0.13.0`, and when the repo's profile names a design system, adds the design rule (and the
 profile's house rules) to the scaffold section of `AGENTS.md`. With a profile that names none, nothing
 changes. It does not touch the README, the manifest or any page.
 

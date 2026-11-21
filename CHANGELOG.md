@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.13.0 (2026-11-21)
+
+- Generated CI checks out `v0.13.0`; the `agents` submodule is unchanged (scientific-research-agents v0.10.0).
 
 - **Visual work uses the profile's design system.** The person's requirement (2026-10-30): scaffolded
   projects use the polarize-ui design system whenever they build a visual or user-facing experience. The
