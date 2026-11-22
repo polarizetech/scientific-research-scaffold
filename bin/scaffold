@@ -54,7 +54,7 @@ KINDS = ("study", "sim", "tool", "workbench")
 #: Kinds that hold units (apps, sims, tools, datasets, calculators), and so can be given to --inside.
 CONTAINERS = ("study", "workbench")
 #: The release that generated CI checks out, and that `.scaffold.lock` records.
-SCAFFOLD_REF = "v0.13.0"
+SCAFFOLD_REF = "v0.14.0"
 LOCK = ".scaffold.lock"
 #: scientific-research-agents, a submodule pinned to a tag: the agent briefs, discipline briefs and the
 #: AGENTS.md section. `git submodule update --init` fetches it.
@@ -454,14 +454,23 @@ PLAIN_EXPLORATORY = '<small class="tier">EXPLORATORY</small>'
 
 
 def design_first(ds, label):
-    """How a page gets its look: the designer designs it on the design system before anyone builds it."""
+    """How a page gets its look, by the stage of the work. Exploratory work gets the designer's MVP mode: one
+    quick pass that designs and builds the page. Past exploratory, the full designer pass: a Claude Design
+    (Design artifact type) when the profile names one, else a mockup, handed to the frontend-developer."""
     art = ds.get("artifact", "")
-    where = (f"as a design made from the Design artifact type with the {ds['name']} design system "
-             f"([its artifact]({art})), using only its components and tokens") if art else \
-            f"as a zero-build mockup page on {label}, using only its components and tokens"
-    return (f"A new page, or a change to how one looks, is designed before it is built: hand it to the "
-            f"`designer` agent, which designs it {where}, then hands the design to `frontend-developer` "
-            "to build. Don't improvise a page's look while building it.")
+    system = f"the {ds['name']} design system" if art else label
+    full = (f"a Claude Design made from the Design artifact type ([its artifact]({art}))" if art
+            else "a zero-build mockup page")
+    return ("How a page is designed depends on the stage of the work. **While it is exploratory** "
+            "(`mode = \"exploratory\"` in `HYPOTHESIS.toml`, `stage = \"exploratory\"` in `SCOPE.toml`, or "
+            "`Tier: explore` in a scope file), the `designer` agent works in MVP mode: one quick pass that "
+            f"designs and builds the page in one step on {system}, from its existing components and tokens, "
+            "aiming for a workable page within about an hour, to be refined later. No Claude Design, separate "
+            "mockup, audit or hand-off. Its numbers and methods still come from established papers, from a "
+            "preliminary pass. **Past exploratory** (a hypothesis or claim, or `Tier: grounded` or "
+            "`publication`), a new page or a change to how one looks gets the full designer pass: the "
+            f"`designer` designs it first, as {full} using only its components and tokens, and hands it to "
+            "`frontend-developer` to build. Don't improvise a page's look outside the design system.")
 
 
 def design_app_readme(ds, label, rules):

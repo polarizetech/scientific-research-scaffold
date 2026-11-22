@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.14.0 (2026-11-22)
+
+- Generated CI checks out `v0.14.0`; the `agents` submodule moves to scientific-research-agents v0.11.0.
+
+- **The designer's MVP mode for exploratory work.** The person's words (2026-11-22): "If we're in
+  exploratory, I want to treat exploratory like MVP mode ... If we're out of exploratory, then we would do
+  that". The design rule in `AGENTS.md` and each new app's README **Design** section now say: while the work
+  is exploratory (`mode = "exploratory"` in `HYPOTHESIS.toml`, `stage = "exploratory"` in `SCOPE.toml`, or
+  `Tier: explore` in a scope file), the `designer` works in MVP mode, one quick pass that designs and builds
+  the page, aiming for a workable page within about an hour, its numbers and methods still from established
+  papers; past exploratory, the full designer pass (a Claude Design, or a mockup, handed to
+  `frontend-developer`). The `designer` brief (scientific-research-agents v0.11.0) says the same.
+
 ## v0.13.0 (2026-11-21)
 
 - Generated CI checks out `v0.13.0`; the `agents` submodule is unchanged (scientific-research-agents v0.10.0).
