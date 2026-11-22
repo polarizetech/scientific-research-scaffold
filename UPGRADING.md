@@ -16,6 +16,16 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.14.0
+
+**`scaffold update` does:** moves the CI ref to `v0.14.0`, and refreshes the scaffold section of `AGENTS.md`
+from scientific-research-agents v0.11.0 with the new design-first point: exploratory work gets the designer's
+MVP mode, work past exploratory the full designer pass.
+
+**A session does:** replace `.claude/agents/designer.md` with the brief a new repo of the same profile gets,
+so the installed designer knows MVP mode. For an app that is being worked on, replace the design-first bullet
+in its README § Design with the one a new app of the same profile gets. Leave other apps as they are.
+
 ## v0.13.0
 
 **`scaffold update` does:** moves the CI ref to `v0.13.0`, and when the repo's profile names a design system, adds the design rule (and the
