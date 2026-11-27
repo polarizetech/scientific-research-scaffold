@@ -16,6 +16,15 @@ To upgrade a repo:
 Every release adds a section here, newest first. A step a session can't do without the person's decision
 says so.
 
+## v0.15.0
+
+**`scaffold update` does:** moves the CI ref to `v0.15.0`, refreshes the scaffold section of `AGENTS.md` from
+scientific-research-agents v0.12.0 with the new section "Research is saved, never a blocker", and refreshes
+the managed tool, study and workbench rules with the same rule.
+
+**A session does:** replace each installed brief in `.claude/agents/` with the one a new repo of the same
+profile gets, so every role knows the rule. Nothing needs the person's decision.
+
 ## v0.14.0
 
 **`scaffold update` does:** moves the CI ref to `v0.14.0`, and refreshes the scaffold section of `AGENTS.md`

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.15.0 (2026-11-27)
+
+- Generated CI checks out `v0.15.0`; the `agents` submodule moves to scientific-research-agents v0.12.0.
+
+- **Research is saved, never a blocker.** The scaffold section of `AGENTS.md` (scientific-research-agents
+  v0.12.0) and the tool, study and workbench rules (#19) now say: research that comes up in a repo or session
+  is saved without asking to the research corpus's project for the current study or tool (or the study's
+  atlas), each observation as a ledger statement saying how it was marked, and linked from the work. No agent
+  flags, refuses or holds up work because something is research. Scope files citing papers (`scope/*.md`,
+  `SCOPE.toml` evidence) are scope, not research, and are allowed in tools.
+
 ## v0.14.0 (2026-11-22)
 
 - Generated CI checks out `v0.14.0`; the `agents` submodule moves to scientific-research-agents v0.11.0.
