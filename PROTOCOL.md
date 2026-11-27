@@ -407,6 +407,8 @@ uses = ["the WAV + sidecar layout", "GAIN_DB_DEFAULT"]
 - **No research in a tool, except comparisons with other tools.** No question, no `[corpus]`, no
   `RESEARCH.md`, no root `experiments/` or `preregistrations/`. A measurement made with a tool, or of the tool
   against the world, is a finding of the study that made it, recorded there against the tool release it used.
+  Research that comes up while working in a tool is saved to the tool's corpus project without asking and
+  linked from the work; it never holds the work up, and scope files citing papers are scope, not research.
 - **Comparison units.** `sims/<slug>/` and `datasets/<slug>/` are allowed in a tool as long as they are about
   comparing the tool's functionality against other tools: preregistering predictions based on inputs and
   seeing whether the run is correct, as an extension of the test suite (the prereg kit's
