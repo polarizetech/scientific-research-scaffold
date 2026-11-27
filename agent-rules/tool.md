@@ -9,6 +9,12 @@
   correct, as an extension of the test suite (`.agents/protocols/TOOL_VERSIONING.md` §1a). Each names what it
   `compares` in its `SCOPE.toml`, is listed under `[[comparisons]]` in `TOOL.toml`, keeps its preregistrations
   and results inside it, and predicts tool outputs, never the world.
+- **Research is saved, never a blocker.** Research that comes up here (an evidence review, an observation, a
+  run that tells something about the world) is saved as it comes, without asking: to this tool's project in
+  the research corpus, `{{corpus_repo}}` (the `corpus_project` its scope record names, else
+  `projects/{{name}}/`), each observation as a ledger statement saying how it was marked, and linked from the
+  work it came from. It never flags, refuses or holds up the work. Scope files that cite papers (`scope/*.md`,
+  `SCOPE.toml` evidence) are scope, not research, and belong here.
 - **Bench sims.** A sim in `sims/<slug>/` whose `SCOPE.toml` says `kind = "bench"` checks this tool against
   reference implementations in other repos, as part of its tests (`.agents/protocols/TOOL_VERSIONING.md` §1b;
   `scaffold new sim <name> --inside . --reference ...`). Each reference is declared under `[[references]]` with

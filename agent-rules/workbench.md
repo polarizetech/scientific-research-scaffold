@@ -16,6 +16,9 @@
 - **Predict first.** No run that could be quoted happens before its `PREREG.md` is tagged
   (`.agents/protocols/PREREG_PROTOCOL.md`).
 - **Findings go to the corpus**, `{{corpus_repo}}`, referenced by claim ID in each study's `RESEARCH.md`.
+- **Research is saved, never a blocker.** Research that comes up here is saved as it comes, without asking, to
+  the current study's project in `{{corpus_repo}}` (or its atlas), linked from the work. It never holds the
+  work up.
 - **Private folders stay private.** The folders listed under `private` in `WORKBENCH.toml` hold data about
   people; nothing in them is copied, quoted or published, and the repo stays private.
 - **A study leaves for its own repo** when someone outside must see it without the rest, when it must stay

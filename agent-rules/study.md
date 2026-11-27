@@ -47,6 +47,10 @@
   (`.agents/protocols/PREREG_PROTOCOL.md`).
 - **Findings go to the corpus**, `{{corpus_repo}}`, and are referenced here by claim ID in `RESEARCH.md`.
   Never add the corpus as a submodule; never raise a claim's tier from here.
+- **Research is saved, never a blocker.** Research that comes up here is saved as it comes, without asking: to
+  this study's project in `{{corpus_repo}}`, or to this study's atlas when it has one, each observation as a
+  ledger statement saying how it was marked, and linked from the work it came from. It never flags, refuses or
+  holds up the work. Scope files that cite papers are scope, not research, and belong here.
 - **Depend on tags.** Libraries and external sims are pinned in `pyproject.toml`. Workbench tools go through
   `shared/workbench.py`, for local exploration only.
 - **No absolute home-directory paths.**
